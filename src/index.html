@@ -20,10 +20,104 @@
   <script src="display.js"></script>
   <script src="foldertree.js"></script>
   <style>
+    .row-locked { border: 2px solid #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,.55) !important; }
+    .row-locked.border-lime-400 { outline: 2px solid #a3e635; outline-offset: 1px; }
     /* Enterキーで切り替える「2画面だけの大画面表示」: ヘッダー・両サイドバー・ツールバーを隠す */
     body.focus-mode > header,
     body.focus-mode main > aside,
     body.focus-mode #viewerToolbar { display: none !important; }
+    /* ---- 画面全体の配色（背景の選択に合わせて、明るさを変える） ---- */
+    html[data-ui="dgray"] { color-scheme: dark; --b950:#2b2b2b; --b900:#353535; --b800:#444444; --b700:#585858; --b500:#8a8a8a; --d800:#555555; --d700:#666666; --d600:#7a7a7a; --t100:#f2f2f2; --t200:#e6e6e6; --t300:#d2d2d2; --t400:#b4b4b4; --t500:#9a9a9a; --t600:#8a8a8a; --tw:#ffffff; --sb:#6a6a6a; --sbt:#2b2b2b; --tree:rgba(255,255,255,.12); --treeact:rgba(59,130,246,.35); }
+    html[data-ui="gray"] { color-scheme: light; --b950:#777777; --b900:#818181; --b800:#909090; --b700:#a2a2a2; --b500:#5a5a5a; --d800:#666666; --d700:#5c5c5c; --d600:#505050; --t100:#0d0d0d; --t200:#141414; --t300:#1f1f1f; --t400:#2e2e2e; --t500:#3c3c3c; --t600:#4a4a4a; --tw:#000000; --sb:#555555; --sbt:#777777; --tree:rgba(0,0,0,.12); --treeact:rgba(59,130,246,.35); }
+    html[data-ui="lgray"] { color-scheme: light; --b950:#c4c4c4; --b900:#cdcdcd; --b800:#b4b4b4; --b700:#a2a2a2; --b500:#7e7e7e; --d800:#a8a8a8; --d700:#989898; --d600:#888888; --t100:#111111; --t200:#1a1a1a; --t300:#262626; --t400:#3a3a3a; --t500:#4e4e4e; --t600:#5e5e5e; --tw:#000000; --sb:#8c8c8c; --sbt:#c4c4c4; --tree:rgba(0,0,0,.10); --treeact:rgba(59,130,246,.25); }
+    html[data-ui="white"] { color-scheme: light; --b950:#ffffff; --b900:#f4f4f4; --b800:#e6e6e6; --b700:#d6d6d6; --b500:#9a9a9a; --d800:#d4d4d4; --d700:#c2c2c2; --d600:#b0b0b0; --t100:#111111; --t200:#1a1a1a; --t300:#2a2a2a; --t400:#444444; --t500:#5e5e5e; --t600:#707070; --tw:#000000; --sb:#b8b8b8; --sbt:#ffffff; --tree:rgba(0,0,0,.08); --treeact:rgba(59,130,246,.2); }
+    html[data-ui] .bg-gray-950 { background-color: var(--b950) !important; }
+    html[data-ui] .bg-gray-900 { background-color: var(--b900) !important; }
+    html[data-ui] .bg-gray-800 { background-color: var(--b800) !important; }
+    html[data-ui] .bg-gray-500 { background-color: var(--b500) !important; }
+    html[data-ui] .hover\:bg-gray-700:hover, html[data-ui] .hover\:bg-gray-800:hover { background-color: var(--b700) !important; }
+    html[data-ui] .hover\:bg-gray-800\/80:hover { background-color: color-mix(in srgb, var(--b700) 80%, transparent) !important; }
+    html[data-ui] .bg-gray-950\/90 { background-color: color-mix(in srgb, var(--b950) 90%, transparent) !important; }
+    html[data-ui] .bg-gray-950\/40 { background-color: color-mix(in srgb, var(--b950) 40%, transparent) !important; }
+    html[data-ui] .bg-gray-900\/90 { background-color: color-mix(in srgb, var(--b900) 90%, transparent) !important; }
+    html[data-ui] .bg-gray-900\/85 { background-color: color-mix(in srgb, var(--b900) 85%, transparent) !important; }
+    html[data-ui] .bg-gray-900\/80 { background-color: color-mix(in srgb, var(--b900) 80%, transparent) !important; }
+    html[data-ui] .bg-gray-900\/40 { background-color: color-mix(in srgb, var(--b900) 40%, transparent) !important; }
+    html[data-ui] .bg-gray-800\/60 { background-color: color-mix(in srgb, var(--b800) 60%, transparent) !important; }
+    html[data-ui] .border-gray-800 { border-color: var(--d800) !important; }
+    /* 2画面の仕切り線の色（アクティブ=黄緑・ロック=赤の枠は、この色に上書きされないようにする） */
+    html[data-ui] .divide-gray-800 > :not([hidden]) ~ :not([hidden]):not(.active-panel-border):not(.locked-panel-border):not(.locked-active-panel-border) { border-color: var(--d800) !important; }
+    html[data-ui] .border-gray-800\/80, html[data-ui] .border-gray-800\/60 { border-color: color-mix(in srgb, var(--d800) 70%, transparent) !important; }
+    html[data-ui] .border-gray-700 { border-color: var(--d700) !important; }
+    html[data-ui] .border-gray-700\/80 { border-color: color-mix(in srgb, var(--d700) 80%, transparent) !important; }
+    html[data-ui] .border-gray-600 { border-color: var(--d600) !important; }
+    html[data-ui] .text-gray-100 { color: var(--t100) !important; }
+    html[data-ui] .text-gray-200 { color: var(--t200) !important; }
+    html[data-ui] .text-gray-300 { color: var(--t300) !important; }
+    html[data-ui] .text-gray-400 { color: var(--t400) !important; }
+    html[data-ui] .text-gray-500 { color: var(--t500) !important; }
+    html[data-ui] .text-gray-600 { color: var(--t600) !important; }
+    html[data-ui] .text-white:not([class*="bg-"]), html[data-ui] .hover\:text-white:hover { color: var(--tw) !important; }
+    html[data-ui] body { color: var(--t100); }
+    html[data-ui] .tree-folder:hover { background-color: var(--tree); }
+    html[data-ui] .tree-folder.active-folder { background-color: var(--treeact); color: var(--tw); }
+    html[data-ui] .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--sb); }
+    html[data-ui] .custom-scrollbar::-webkit-scrollbar-track { background: var(--sbt); }
+    /* 明るい配色では、明るい色の文字を濃い色にする（自分で背景色を持つボタンはそのまま） */
+    html[data-ui="gray"] .text-amber-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-amber-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-amber-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #92400e !important; }
+    html[data-ui="gray"] .text-amber-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-amber-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-amber-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #92400e !important; }
+    html[data-ui="gray"] .text-amber-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-amber-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-amber-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #92400e !important; }
+    html[data-ui="gray"] .text-blue-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-blue-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-blue-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #1d4ed8 !important; }
+    html[data-ui="gray"] .text-cyan-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-cyan-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-cyan-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #0e7490 !important; }
+    html[data-ui="gray"] .text-cyan-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-cyan-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-cyan-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #0e7490 !important; }
+    html[data-ui="gray"] .text-emerald-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-emerald-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-emerald-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #047857 !important; }
+    html[data-ui="gray"] .text-emerald-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-emerald-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-emerald-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #047857 !important; }
+    html[data-ui="gray"] .text-emerald-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-emerald-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-emerald-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #047857 !important; }
+    html[data-ui="gray"] .text-lime-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-lime-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-lime-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #3f6212 !important; }
+    html[data-ui="gray"] .text-purple-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-purple-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-purple-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #7e22ce !important; }
+    html[data-ui="gray"] .text-rose-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-rose-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-rose-200:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #be123c !important; }
+    html[data-ui="gray"] .text-rose-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-rose-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-rose-300:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #be123c !important; }
+    html[data-ui="gray"] .text-rose-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-rose-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-rose-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #be123c !important; }
+    html[data-ui="gray"] .text-sky-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="lgray"] .text-sky-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]), html[data-ui="white"] .text-sky-400:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-purple"]):not([class*="bg-cyan"]):not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-lime"]):not([class*="bg-sky"]) { color: #0369a1 !important; }
+    html[data-ui] .canvas-container .text-amber-200 { color: #fde68a !important; }
+    html[data-ui] .canvas-container .text-amber-300 { color: #fcd34d !important; }
+    html[data-ui] .canvas-container .text-amber-400 { color: #fbbf24 !important; }
+    html[data-ui] .canvas-container .text-blue-400 { color: #60a5fa !important; }
+    html[data-ui] .canvas-container .text-cyan-300 { color: #67e8f9 !important; }
+    html[data-ui] .canvas-container .text-cyan-400 { color: #22d3ee !important; }
+    html[data-ui] .canvas-container .text-emerald-200 { color: #a7f3d0 !important; }
+    html[data-ui] .canvas-container .text-emerald-300 { color: #6ee7b7 !important; }
+    html[data-ui] .canvas-container .text-emerald-400 { color: #34d399 !important; }
+    html[data-ui] .canvas-container .text-lime-300 { color: #bef264 !important; }
+    html[data-ui] .canvas-container .text-purple-400 { color: #c084fc !important; }
+    html[data-ui] .canvas-container .text-rose-200 { color: #fecdd3 !important; }
+    html[data-ui] .canvas-container .text-rose-300 { color: #fda4af !important; }
+    html[data-ui] .canvas-container .text-rose-400 { color: #fb7185 !important; }
+    html[data-ui] .canvas-container .text-sky-400 { color: #38bdf8 !important; }
+    /* 写真に重ねる表示（ファイル名など）は、背景の明るさに関係なく読みやすい暗い札のまま */
+    html[data-ui] .canvas-container .bg-gray-900\/80, html[data-ui] .canvas-container .bg-gray-900\/85 { background-color: rgba(17,24,39,.85) !important; }
+    html[data-ui] .canvas-container .text-gray-200, html[data-ui] .canvas-container .text-gray-100 { color: #e5e7eb !important; }
+    html[data-ui] .canvas-container .border-gray-700\/80 { border-color: rgba(55,65,81,.8) !important; }
+
+    /* 「C」マーク（choiceへコピー済み）。どの背景色でも見えるよう、濃い青地に白文字・明るい縁取り */
+    .mark-c { background-color: #0369a1 !important; color: #ffffff !important; border: 1px solid #7dd3fc !important; font-weight: 700; line-height: 1.1; }
+    /* フィルター表示とリセットボタン（見やすく大きく） */
+    .filter-label { font-size: 14px; font-weight: 600; }
+    .filter-status { font-size: 16px; font-weight: 800; }
+    .filter-reset { background-color: #2563eb; color: #ffffff; border: 1px solid #93c5fd; border-radius: 6px; padding: 3px 12px; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+    .filter-reset:hover { background-color: #3b82f6; }
+    /* グリッド一覧: 複数選択と、まとめての操作 */
+    .gbtn { background-color: var(--b800, #374151); color: var(--t200, #f3f4f6); border: 1px solid var(--d700, #6b7280); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+    .gbtn:hover { background-color: var(--b700, #4b5563); }
+    .gbtn:disabled { opacity: .4; cursor: default; }
+    .gbtn-danger { background-color: #b91c1c !important; color: #ffffff !important; border-color: #fca5a5 !important; }
+    .gbtn-danger:hover { background-color: #dc2626 !important; }
+    .grid-sel-count { font-size: 14px; font-weight: 800; min-width: 7rem; }
+    .grid-card { user-select: none; position: relative; }
+    .grid-card.sel { outline: 4px solid #38bdf8; outline-offset: -4px; box-shadow: 0 0 14px rgba(56, 189, 248, .55); }
+    .grid-card .sel-check { display: none; position: absolute; left: 8px; bottom: 8px; width: 22px; height: 22px; border-radius: 50%; background: #0284c7; color: #fff; font-size: 13px; font-weight: 800; align-items: center; justify-content: center; border: 2px solid #fff; z-index: 11; }
+    .grid-card.sel .sel-check { display: flex; }
+    #viewerSection, #containerA, #containerB { background-color: var(--viewer-bg, #0a0a0a) !important; }
     .canvas-container {
       cursor: crosshair;
       user-select: none;
@@ -80,9 +174,13 @@
       color: #eab308;
     }
     /* ヘッダー: 幅が足りないときは、ボタンの文字を縦に折り返さず、段を折り返す */
-    header { flex-wrap: wrap; row-gap: 0.5rem; }
-    header > div:last-child { flex-wrap: wrap; row-gap: 0.5rem; justify-content: flex-end; }
+    /* 画面が狭いときは、アプリ名の文字を隠して、ボタンと設定を1列に収める */
+    @media (max-width: 2350px) { header .app-title { display: none; } }
+    header { flex-wrap: nowrap; row-gap: 0.5rem; gap: 0.5rem; }
+    header > div:first-child { flex-shrink: 0; }
+    header > div:last-child { flex-wrap: wrap; row-gap: 0.5rem; justify-content: flex-end; min-width: 0; }
     header button, header label, header span, header select { white-space: nowrap; }
+    #openProfileModalBtn { max-width: 8.5rem !important; }   /* 長いプロファイル名は省略して、ヘッダーを1列に保つ */
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 flex flex-col h-screen overflow-hidden font-sans">
@@ -93,64 +191,52 @@
       <div class="bg-blue-600 text-white p-2 rounded-lg">
         <i class="fa-solid fa-sliders text-lg"></i>
       </div>
-      <div>
+      <div class="app-title">
         <h1 class="font-bold text-base leading-tight">Pro Color Photo Inspector</h1>
         <p class="text-xs text-gray-400">プロ向け写真選別 & カラーマネジメントビューア</p>
       </div>
     </div>
 
     <!-- アクションボタン＆設定 -->
-    <div class="flex items-center space-x-3 text-xs">
-      <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
-        <i class="fa-solid fa-folder-open"></i>
-        <span>画像フォルダを選択</span>
-        <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" accept="image/jpeg,image/png,image/webp">
-      </label>
-
+    <div class="flex items-center space-x-1.5 text-xs">
       <!-- フォルダツリーボタン (別窓モーダル用) -->
-      <button id="openFolderModalBtn" class="bg-cyan-700 hover:bg-cyan-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+      <button id="openFolderModalBtn" class="bg-cyan-700 hover:bg-cyan-600 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
         <i class="fa-solid fa-sitemap"></i>
         <span>フォルダツリー (別窓)</span>
       </button>
 
       <!-- グリッド一覧ボタン (別窓モーダル用) -->
-      <button id="openGridModalBtn" class="bg-purple-700 hover:bg-purple-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+      <button id="openGridModalBtn" class="bg-purple-700 hover:bg-purple-600 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
         <i class="fa-solid fa-grip"></i>
         <span>グリッド一覧 (別窓)</span>
       </button>
 
-      <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+      <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-folder-open"></i>
+        <span>画像フォルダを選択 (別窓)</span>
+        <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" accept="image/jpeg,image/png,image/webp">
+      </label>
+
+      <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
         <i class="fa-solid fa-file-image"></i>
-        <span>画像ファイルを選択</span>
+        <span>画像ファイルを選択 (別窓)</span>
         <input type="file" id="fileInput" multiple class="hidden" accept="image/jpeg,image/png,image/webp">
       </label>
 
-      <button id="liveBtn" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-medium px-3 py-2 rounded-lg transition flex items-center space-x-2 shadow" title="ONにすると、表示中のフォルダに増えた最新の写真を自動で画面Aに表示します（カメラからの転送用）">
+      <button id="liveBtn" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow" title="ONにすると、表示中のフォルダに増えた最新の写真を自動で画面Bに表示します（カメラからの転送用）">
         <span id="liveDot" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span>
         <span id="liveText">ライブ OFF</span>
       </button>
 
-      <div class="flex items-center space-x-1.5 bg-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-700">
-        <span class="text-gray-400 text-[11px]">保存フォルダ名:</span>
-        <input type="text" id="targetSubFolder" value="choice" class="bg-gray-900 text-amber-300 text-xs rounded border border-gray-700 px-2 py-0.5 w-24 text-center focus:outline-none focus:border-blue-500">
-      </div>
-
-      <button id="copySelectedBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+      <button id="copySelectedBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
         <i class="fa-solid fa-folder-plus"></i>
-        <span>選別済み写真を書き出し (F10)</span>
+        <span>選別写真の書き出し（別窓）</span>
       </button>
 
-      <!-- 最初からやり直す（全リセット）ボタン -->
-      <button onclick="resetAllState()" class="bg-rose-700 hover:bg-rose-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow" title="すべてのフラグ・レーティング・選別状態を解除して初期状態に戻します">
-        <i class="fa-solid fa-rotate-left"></i>
-        <span>最初からやり直す</span>
-      </button>
-
-      <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700">
-        <span class="text-gray-400 text-[11px]">表示モード:</span>
+      <div class="flex items-center space-x-1.5 bg-gray-800 px-2 py-1 rounded-lg border border-gray-700">
         <select id="colorProfileSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500">
-          <option value="display-p3">Display P3 (Apple / 広色域)</option>
-          <option value="srgb">sRGB (標準)</option>
+          <option value="display-p3">Display P3 (広色域)</option>
+          <option value="srgb">sRGB</option>
         </select>
         <button id="openProfileModalBtn" class="hidden bg-gray-900 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded px-2 py-0.5 text-xs flex items-center space-x-1.5 max-w-[11rem]" title="モニタープロファイル(ICC)を読み込んで、正確な色味で表示します">
           <i class="fa-solid fa-display text-cyan-400"></i>
@@ -167,13 +253,21 @@
           <option value="380" selected>標準</option>
           <option value="450">ゆっくり</option>
         </select>
-        <span class="text-gray-400 text-[11px]">画質:</span>
-        <select id="sharpSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="画面に合わせて写真を縮めるときの画質。「速い」以外は、段階的に縮めてシャープをかけます（強さは きれい<くっきり<強め<最強）。100%表示にも同じ強さのシャープがかかります。表示だけで、元の写真は変わりません。ピント確認など、元の画素をそのまま見たいときは「速い」にしてください">
-          <option value="off">速い</option>
-          <option value="weak" selected>きれい</option>
-          <option value="normal">くっきり</option>
-          <option value="strong">強め</option>
-          <option value="max">最強</option>
+        <span class="text-gray-400 text-[11px]">背景:</span>
+        <select id="bgSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="アプリ全体の背景色（黒／濃いグレー／グレー／薄いグレー／白）。写真の周りの色も同じになります。表示だけで、写真は変わりません。色の確認には、明るすぎない色がおすすめです">
+          <option value="#0a0a0a" data-ui="black" selected>黒</option>
+          <option value="#2b2b2b" data-ui="dgray">濃いグレー</option>
+          <option value="#777777" data-ui="gray">グレー</option>
+          <option value="#c4c4c4" data-ui="lgray">薄いグレー</option>
+          <option value="#ffffff" data-ui="white">白</option>
+        </select>
+        <span class="text-gray-400 text-[11px]">シャープ効果:</span>
+        <select id="sharpSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="写真を画面に合わせて縮めるときの、シャープ（輪郭をくっきりさせる）効果の強さ。無し＜小＜中＜大＜最大。「無し」以外は、段階的に縮めてからシャープをかけます。100%表示にも同じ強さがかかります。表示だけで、元の写真は変わりません。ピント確認など、元の画素をそのまま見たいときは「無し」にしてください">
+          <option value="off">無し</option>
+          <option value="weak" selected>小</option>
+          <option value="normal">中</option>
+          <option value="strong">大</option>
+          <option value="max">最大</option>
         </select>
       </div>
     </div>
@@ -216,9 +310,9 @@
 
         <!-- フィルターボタンエリア（星 & フラグ） -->
         <div class="px-2 py-1.5 bg-gray-900/90 border-b border-gray-800 flex flex-col space-y-1 text-[11px]">
-          <div class="flex justify-between items-center text-gray-400 px-1">
-            <span>フィルター: <strong id="filterStatusText" class="text-amber-300">すべて</strong></span>
-            <button onclick="setFilter('all', null)" class="text-[10px] text-blue-400 hover:underline">リセット</button>
+          <div class="flex justify-between items-center text-gray-400 px-1 filter-head">
+            <span class="filter-label">フィルター: <strong id="filterStatusText" class="text-amber-300 filter-status">すべて</strong></span>
+            <button onclick="setFilter('all', null)" class="filter-reset" title="フィルターを解除して、すべての写真を表示します">リセット</button>
           </div>
           <!-- フラグフィルターボタン -->
           <div class="grid grid-cols-2 gap-1 pb-1 border-b border-gray-800/80">
@@ -258,12 +352,12 @@
       <!-- 操作説明 -->
       <div class="p-2 bg-gray-950 border-t border-gray-800 text-[10px] text-gray-400 space-y-0.5 shrink-0">
         <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">0~5</kbd> 星評価 | <kbd class="bg-gray-800 px-1 rounded text-gray-200">P</kbd> Pick | <kbd class="bg-gray-800 px-1 rounded text-gray-200">X</kbd> Reject | <kbd class="bg-gray-800 px-1 rounded text-gray-200">U</kbd> 解除</p>
-        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">←/→</kbd> スクロール | <kbd class="bg-gray-800 px-1 rounded text-gray-200">L</kbd> ロック | <kbd class="bg-gray-800 px-1 rounded text-gray-200">F10</kbd> 書き出し | <kbd class="bg-gray-800 px-1 rounded text-gray-200">Enter</kbd> 大画面</p>
+        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">←/→</kbd> スクロール | <kbd class="bg-gray-800 px-1 rounded text-gray-200">L</kbd> ロック | <kbd class="bg-gray-800 px-1 rounded text-gray-200">C</kbd> choiceへコピー | <kbd class="bg-gray-800 px-1 rounded text-gray-200">Del</kbd> 削除 | <kbd class="bg-gray-800 px-1 rounded text-gray-200">Enter</kbd> 大画面</p>
       </div>
     </aside>
 
     <!-- 中央：2画面ビューア -->
-    <section class="flex-1 flex flex-col bg-gray-950 relative overflow-hidden">
+    <section id="viewerSection" class="flex-1 flex flex-col bg-gray-950 relative overflow-hidden">
       <!-- ツールバー -->
       <div id="viewerToolbar" class="bg-gray-900/80 backdrop-blur px-4 py-1.5 border-b border-gray-800 flex justify-between items-center text-xs z-10">
         <div class="flex items-center space-x-4">
@@ -294,6 +388,7 @@
           </div>
           <!-- 画面Aの右下メタデータオーバーレイバッジ -->
           <div id="overlayBadgeA" class="absolute bottom-3 right-3 bg-gray-900/85 border border-gray-700/80 rounded px-2.5 py-1 text-xs z-10 pointer-events-none backdrop-blur flex items-center space-x-2 shadow-lg hidden">
+            <span data-choice class="hidden font-bold px-1.5 py-0.5 rounded text-[10px] mark-c">C</span>
             <span id="overlayFlagA" class="font-bold px-1 rounded text-[10px]"></span>
             <span id="overlayStarsA" class="text-amber-400 font-bold tracking-tight text-xs"></span>
           </div>
@@ -307,6 +402,7 @@
           </div>
           <!-- 画面Bの右下メタデータオーバーレイバッジ -->
           <div id="overlayBadgeB" class="absolute bottom-3 right-3 bg-gray-900/85 border border-gray-700/80 rounded px-2.5 py-1 text-xs z-10 pointer-events-none backdrop-blur flex items-center space-x-2 shadow-lg hidden">
+            <span data-choice class="hidden font-bold px-1.5 py-0.5 rounded text-[10px] mark-c">C</span>
             <span id="overlayFlagB" class="font-bold px-1 rounded text-[10px]"></span>
             <span id="overlayStarsB" class="text-amber-400 font-bold tracking-tight text-xs"></span>
           </div>
@@ -448,6 +544,26 @@
         </div>
         <button id="closeGridModalBtn" class="text-gray-400 hover:text-white text-lg px-2"><i class="fa-solid fa-xmark"></i></button>
       </div>
+
+      <!-- 複数選択のまとめ操作 -->
+      <div id="gridToolbar" class="flex flex-wrap items-center gap-2 text-xs">
+        <span id="gridSelCount" class="grid-sel-count">0 枚選択中</span>
+        <button class="gbtn" data-gact="all">すべて選択 (Ctrl+A)</button>
+        <button class="gbtn" data-gact="none">選択解除</button>
+        <span class="text-gray-400">評価:</span>
+        <button class="gbtn" data-gact="rate0">なし</button>
+        <button class="gbtn" data-gact="rate1">★1</button>
+        <button class="gbtn" data-gact="rate2">★2</button>
+        <button class="gbtn" data-gact="rate3">★3</button>
+        <button class="gbtn" data-gact="rate4">★4</button>
+        <button class="gbtn" data-gact="rate5">★5</button>
+        <span class="text-gray-400">フラグ:</span>
+        <button class="gbtn" data-gact="pick">Pick</button>
+        <button class="gbtn" data-gact="reject">Reject</button>
+        <button class="gbtn" data-gact="unflag">解除</button>
+        <button class="gbtn gbtn-danger" data-gact="trash" title="選んだ写真を、ごみ箱へ移します（ごみ箱から元に戻せます）">削除（ごみ箱へ）</button>
+      </div>
+      <div class="text-[11px] text-gray-400 -mt-2">クリック=選ぶ ／ Ctrl+クリック=1枚ずつ追加・解除 ／ Shift+クリック=間をまとめて選ぶ ／ ダブルクリック=メイン画面で開く</div>
 
       <!-- グリッド表示エリア -->
       <div id="photoGridContainer" class="flex-1 bg-gray-950 border border-gray-800 rounded-lg p-4 overflow-y-auto custom-scrollbar grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -842,7 +958,7 @@
         state.pickedFiles.clear();
         state.metadataMap.clear();
 
-        validFiles.forEach(f => state.metadataMap.set(f, { rating: 0, flag: null }));
+        validFiles.forEach(f => state.metadataMap.set(f, { rating: 0, flag: null, choice: false }));
 
         buildFolderTree(validFiles);
         if (totalCountEl) totalCountEl.textContent = validFiles.length;
@@ -895,6 +1011,14 @@
         lsSet('pci.transition', transitionSelect.value);
       });
 
+      const bgSelect = document.getElementById('bgSelect');
+      bgSelect.addEventListener('change', () => {
+        bgSelect.blur();
+        applyBackground(bgSelect.value);
+        lsSet('pci.bg', bgSelect.value);
+        Display.rebuildAll();
+      });
+
       const sharpSelect = document.getElementById('sharpSelect');
       sharpSelect.addEventListener('change', () => {
         sharpSelect.blur();
@@ -925,7 +1049,7 @@
 
         // 「保存フォルダ名」の入力中は、文字入力をショートカットとして扱わない
         const tag = e.target && e.target.tagName;
-        if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'F10') return;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
         // Enter: 2画面だけの大画面表示と通常表示を行き来する（ボタンに残ったフォーカスで、ボタンが押されないようにする）
         if (e.key === 'Enter' && !e.ctrlKey && !e.altKey && !e.metaKey && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') {
@@ -942,9 +1066,12 @@
         } else if (e.key === 'ArrowLeft') {
           e.preventDefault();
           prevImage();
-        } else if (e.key === 'F10') {
+        } else if (e.key === 'Delete') {
           e.preventDefault();
-          togglePickTargetImage();
+          deleteActiveFile();
+        } else if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          copyActiveToChoice();
         } else if (['0','1','2','3','4','5'].includes(e.key)) {
           setRating(parseInt(e.key));
         } else if (e.key.toLowerCase() === 'p') {
@@ -1053,9 +1180,15 @@
       loadAndRender();
     }
 
+    const gridSel = new Set();      // グリッド一覧で選んでいる写真
+    let gridAnchor = -1;            // Shift+クリックの起点
+    let gridFiles = [];             // いまグリッドに並んでいる写真
+
     function openGridModal() {
       photoGridContainer.innerHTML = '';
       const filesToDisplay = state.currentFiles || [];
+      gridFiles = filesToDisplay;
+      Array.from(gridSel).forEach((f) => { if (!filesToDisplay.includes(f)) gridSel.delete(f); });
       gridModalSubTitle.textContent = `フォルダ: ${state.currentFolderPath || 'ルート'} (${filesToDisplay.length}枚)`;
       gridModalCountText.textContent = `${filesToDisplay.length} 枚表示中`;
 
@@ -1066,6 +1199,7 @@
             画像がありません
           </div>
         `;
+        refreshGridSelectionUI();
         return;
       }
 
@@ -1076,13 +1210,16 @@
         const thumbUrl = getThumbnailUrl(file);
 
         const card = document.createElement('div');
-        card.className = "bg-gray-900 border border-gray-800 hover:border-purple-500 rounded-lg overflow-hidden flex flex-col cursor-pointer transition shadow hover:shadow-purple-500/15 group h-64";
+        card.className = "grid-card bg-gray-900 border border-gray-800 hover:border-purple-500 rounded-lg overflow-hidden flex flex-col cursor-pointer transition shadow hover:shadow-purple-500/15 group h-64" + (gridSel.has(file) ? ' sel' : '');
+        card.dataset.index = String(index);
         
         card.innerHTML = `
           <div class="w-full bg-gray-950 relative overflow-hidden flex items-center justify-center flex-1 p-1">
             <img src="${thumbUrl}" class="w-full h-full object-contain group-hover:scale-105 transition duration-300" alt="${esc(file.name)}" loading="lazy">
             ${meta.flag === 'pick' ? '<span class="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">Pick (P)</span>' : ''}
             ${meta.flag === 'reject' ? '<span class="absolute top-2 left-2 bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">Reject (X)</span>' : ''}
+            <span class="sel-check">✓</span>
+            ${meta.choice ? '<span class="absolute bottom-2 right-2 mark-c text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10" title="choiceフォルダにコピー済み">C</span>' : ''}
             ${isPicked ? '<span class="absolute top-2 right-2 bg-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">選別済</span>' : ''}
           </div>
           <div class="p-2.5 flex flex-col justify-between shrink-0 bg-gray-900/90 border-t border-gray-800/80">
@@ -1092,12 +1229,13 @@
             </div>
             <div class="flex justify-between items-center mt-1.5 pt-1.5 border-t border-gray-800 text-xs">
               <span class="text-amber-400 font-bold text-[11px]">${starsText}</span>
-              <span class="text-[10px] text-purple-400 font-medium group-hover:underline">選択 →</span>
+              <span class="text-[10px] text-purple-400 font-medium">${esc(file.name.split('.').pop().toUpperCase())}</span>
             </div>
           </div>
         `;
 
-        card.onclick = () => {
+        card.onclick = (ev) => gridClick(ev, index);
+        card.ondblclick = () => {
           const delta = index - state.currentIndex;
           state.currentIndex = index;
           if (!state.lockedPanel) state.cursorPanel = state.activePanel;
@@ -1112,7 +1250,194 @@
 
         photoGridContainer.appendChild(card);
       });
+      refreshGridSelectionUI();
     }
+
+    // ---- グリッド一覧の複数選択（Ctrl+クリック／Shift+クリック）と、まとめての操作
+    function gridClick(ev, index) {
+      const file = gridFiles[index];
+      if (!file) return;
+      const additive = ev.ctrlKey || ev.metaKey;
+      if (ev.shiftKey && gridAnchor >= 0) {
+        const [lo, hi] = gridAnchor < index ? [gridAnchor, index] : [index, gridAnchor];
+        if (!additive) gridSel.clear();
+        for (let i = lo; i <= hi; i++) if (gridFiles[i]) gridSel.add(gridFiles[i]);
+      } else if (additive) {
+        if (gridSel.has(file)) gridSel.delete(file); else gridSel.add(file);
+        gridAnchor = index;
+      } else {
+        gridSel.clear();
+        gridSel.add(file);
+        gridAnchor = index;
+      }
+      refreshGridSelectionUI();
+    }
+
+    function refreshGridSelectionUI() {
+      photoGridContainer.querySelectorAll('.grid-card').forEach((card) => {
+        const f = gridFiles[parseInt(card.dataset.index, 10)];
+        card.classList.toggle('sel', !!f && gridSel.has(f));
+      });
+      const n = gridSel.size;
+      document.getElementById('gridSelCount').textContent = `${n} 枚選択中`;
+      document.querySelectorAll('#gridToolbar [data-gact]').forEach((b) => {
+        const act = b.dataset.gact;
+        b.disabled = (act === 'all') ? gridFiles.length === 0 : n === 0;
+      });
+    }
+
+    // 選んだ写真すべてに同じ操作をする（評価・フラグ）
+    function gridApply(fn) {
+      if (gridSel.size === 0) return;
+      gridSel.forEach((file) => {
+        const meta = state.metadataMap.get(file) || { rating: 0, flag: null, choice: false };
+        fn(meta);
+        state.metadataMap.set(file, meta);
+        if (meta.flag === 'pick') state.pickedFiles.add(file); else state.pickedFiles.delete(file);
+      });
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+      if (state.filterType !== 'all') applyFilter();
+      updateMetadataUI();
+      updateFileListSidebar(false);
+      scheduleSave();
+      const top = photoGridContainer.scrollTop;
+      openGridModal();
+      photoGridContainer.scrollTop = top;
+    }
+
+    // 2画面でアクティブな写真を、Deleteキーで削除する（確認の窓つき・ごみ箱へ）
+    async function deleteActiveFile() {
+      const file = getActiveFile();
+      if (!file) return;
+      if (!file.path || !window.nativeApp || !window.nativeApp.trashFiles) { toast('この機能はデスクトップ版で使えます'); return; }
+      let r;
+      try { r = await window.nativeApp.trashFiles([file.path]); } catch (e) { toast('削除できませんでした: ' + (e && e.message ? e.message : e)); return; }
+      if (r.canceled) return;
+      if (r.failed.length) { toast('削除できませんでした: ' + r.failed[0].reason); return; }
+      gridSel.delete(file);
+      await clearParentChoiceMarks([file]);
+      removeFilesFromState([file]);
+      toast(`「${file.name}」をごみ箱へ移しました`, 3000);
+    }
+
+    async function gridTrashSelected() {
+      if (gridSel.size === 0) return;
+      if (!window.nativeApp || !window.nativeApp.trashFiles) { toast('この機能はデスクトップ版で使えます'); return; }
+      const files = Array.from(gridSel).filter((f) => f.path);
+      if (files.length === 0) { toast('削除できる写真がありません'); return; }
+      let r;
+      try { r = await window.nativeApp.trashFiles(files.map((f) => f.path)); } catch (e) { toast('削除できませんでした: ' + (e && e.message ? e.message : e)); return; }
+      if (r.canceled) return;
+      const gone = new Set(r.trashed);
+      const goneFiles = files.filter((f) => gone.has(f.path));
+      await clearParentChoiceMarks(goneFiles);
+      removeFilesFromState(goneFiles);
+      gridSel.clear();
+      gridAnchor = -1;
+      const top = photoGridContainer.scrollTop;
+      openGridModal();
+      photoGridContainer.scrollTop = top;
+      toast(r.failed.length
+        ? `${r.trashed.length} 枚をごみ箱へ移しました（${r.failed.length} 枚は失敗: ${r.failed[0].reason}）`
+        : `${r.trashed.length} 枚の写真をごみ箱へ移しました`, 4000);
+    }
+
+    // choiceフォルダの中の写真を削除したら、上の階層にある同じ名前の写真の「C」マークを消す
+    async function clearParentChoiceMarks(files) {
+      if (!window.nativeApp || !window.nativeApp.loadSelections) return;
+      const byParent = new Map();
+      files.forEach((f) => {
+        const dir = f.dir || '';
+        const cut = Math.max(dir.lastIndexOf('/'), dir.lastIndexOf('\\'));
+        if (cut <= 0) return;
+        if (dir.slice(cut + 1).toLowerCase() !== 'choice') return;
+        const parent = dir.slice(0, cut);
+        if (!byParent.has(parent)) byParent.set(parent, new Set());
+        byParent.get(parent).add(f.name);
+      });
+      for (const [parent, names] of byParent) {
+        try {
+          // いま開いている写真の中に、その写真があれば、画面の記録からも消す
+          state.allFiles.forEach((f) => {
+            if (f.dir === parent && names.has(f.name)) {
+              const m = state.metadataMap.get(f);
+              if (m) m.choice = false;
+            }
+          });
+          const loaded = (state.savedBase && state.savedBase[parent]) || await window.nativeApp.loadSelections(parent) || {};
+          const items = { ...loaded };
+          let changed = false;
+          names.forEach((n) => {
+            if (items[n] && items[n].choice) { items[n] = { ...items[n], choice: false }; changed = true; }
+          });
+          if (state.savedBase && state.savedBase[parent]) state.savedBase[parent] = items;
+          if (changed) await window.nativeApp.saveSelections(parent, items);
+        } catch (e) { /* 上の階層の記録を直せなくても、削除は続ける */ }
+      }
+    }
+
+    // 削除した写真を、画面の状態から取り除く
+    function removeFilesFromState(files) {
+      if (!files.length) return;
+      const gone = new Set(files);
+      const active = getActiveFile();
+      const oldIndex = state.currentIndex;
+      const lockedFile = state.lockedPanel ? state.currentFiles[state.lockedIndex] : null;
+
+      files.forEach((f) => {
+        state.metadataMap.delete(f);
+        state.pickedFiles.delete(f);
+        if (state.savedBase && state.savedBase[f.dir]) delete state.savedBase[f.dir][f.name];
+      });
+      state.allFiles = state.allFiles.filter((f) => !gone.has(f));
+      state.allFolderFiles = (state.allFolderFiles || []).filter((f) => !gone.has(f));
+      applyFilter();
+
+      if (lockedFile && gone.has(lockedFile)) {
+        state.lockedPanel = null;
+        updateLockBadgeUI();
+        updatePanelBorders();
+      }
+      let idx = active && !gone.has(active) ? state.currentFiles.indexOf(active) : -1;
+      if (idx < 0) idx = Math.min(oldIndex, Math.max(0, state.currentFiles.length - 1));
+      state.currentIndex = idx;
+      if (state.lockedPanel && lockedFile) {
+        const li = state.currentFiles.indexOf(lockedFile);
+        if (li >= 0) state.lockedIndex = li; else state.lockedPanel = null;
+      }
+      state.cursorPanel = 'A';
+      setActivePanel('A');
+      if (totalCountEl) totalCountEl.textContent = state.allFiles.length;
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+      scheduleSave();
+      loadAndRender(true);
+    }
+
+    document.getElementById('gridToolbar').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-gact]');
+      if (!b || b.disabled) return;
+      const act = b.dataset.gact;
+      if (act === 'all') { gridFiles.forEach((f) => gridSel.add(f)); refreshGridSelectionUI(); }
+      else if (act === 'none') { gridSel.clear(); refreshGridSelectionUI(); }
+      else if (act.startsWith('rate')) { const n = parseInt(act.slice(4), 10); gridApply((m) => { m.rating = n; }); }
+      else if (act === 'pick') gridApply((m) => { m.flag = 'pick'; });
+      else if (act === 'reject') gridApply((m) => { m.flag = 'reject'; });
+      else if (act === 'unflag') gridApply((m) => { m.flag = null; });
+      else if (act === 'trash') gridTrashSelected();
+    });
+
+    // グリッドが開いているときのキー操作（Ctrl+A=すべて選択、Delete=削除）
+    document.addEventListener('keydown', (e) => {
+      if (gridModal.classList.contains('hidden')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        gridFiles.forEach((f) => gridSel.add(f));
+        refreshGridSelectionUI();
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        gridTrashSelected();
+      }
+    });
 
     function setStarFilter(mode, val) {
       state.filterType = 'star';
@@ -1229,11 +1554,19 @@
 
     function toggleLockActivePanel() {
       if (state.lockedPanel === state.activePanel) {
+        // 解除: ロックしていた写真はその画面のまま。もう一方の画面には、その写真の隣の写真を出す
+        if (state.lockedIndex >= 0 && state.lockedIndex < state.currentFiles.length) {
+          state.currentIndex = state.lockedIndex;
+          state.cursorPanel = state.lockedPanel;
+        }
         state.lockedPanel = null;
       } else {
         const cur = getIndices();   // ロックする前の並びで、枠のある画面の写真を固定する
         state.lockedPanel = state.activePanel;
         state.lockedIndex = state.activePanel === 'A' ? cur.indexA : cur.indexB;
+        // もう一方の画面は、ロックする前に出ていた写真のまま（同じ写真が2枚並ばないように）
+        const other = state.activePanel === 'A' ? cur.indexB : cur.indexA;
+        if (other >= 0) state.currentIndex = other;
       }
       updateLockBadgeUI();
       updatePanelBorders();
@@ -1260,8 +1593,11 @@
     }
 
     function nextImage() {
-      if (state.currentIndex < state.currentFiles.length - 1) {
-        state.currentIndex++;
+      // ロック中は、ロックした写真を飛ばす（同じ写真が2枚並ばないように）
+      let target = state.currentIndex + 1;
+      if (state.lockedPanel && target === state.lockedIndex) target++;
+      if (target <= state.currentFiles.length - 1) {
+        state.currentIndex = target;
         if (state.lockedPanel) {
           state.lockedPanel = 'A';
           setActivePanel('B');
@@ -1274,8 +1610,10 @@
     }
 
     function prevImage() {
-      if (state.currentIndex > 0) {
-        state.currentIndex--;
+      let target = state.currentIndex - 1;
+      if (state.lockedPanel && target === state.lockedIndex) target--;
+      if (target >= 0) {
+        state.currentIndex = target;
         if (state.lockedPanel) {
           state.lockedPanel = 'B';
           setActivePanel('A');
@@ -1293,10 +1631,10 @@
       let indexA, indexB;
       if (state.cursorPanel === 'B') {
         indexB = state.currentIndex;
-        indexA = indexB > 0 ? indexB - 1 : (last > 0 ? 1 : 0);
+        indexA = indexB > 0 ? indexB - 1 : (last > 0 ? 1 : -1);   // 1枚だけのときは、もう一方の画面は空にする
       } else {
         indexA = state.currentIndex;
-        indexB = indexA < last ? indexA + 1 : (last > 0 ? indexA - 1 : 0);
+        indexB = indexA < last ? indexA + 1 : (last > 0 ? indexA - 1 : -1);
       }
 
       if (state.lockedPanel === 'A') {
@@ -1313,13 +1651,14 @@
       if (state.currentFiles.length === 0) return null;
       const { indexA, indexB } = getIndices();
       const targetIndex = state.activePanel === 'A' ? indexA : indexB;
-      return state.currentFiles[targetIndex];
+      return state.currentFiles[targetIndex >= 0 ? targetIndex : Math.max(indexA, indexB)];
     }
 
     function getActiveIndex() {
       if (state.currentFiles.length === 0) return -1;
       const { indexA, indexB } = getIndices();
-      return state.activePanel === 'A' ? indexA : indexB;
+      const t = state.activePanel === 'A' ? indexA : indexB;
+      return t >= 0 ? t : Math.max(indexA, indexB);
     }
 
     function setRating(rating) {
@@ -1414,6 +1753,32 @@
       scheduleSave();
     }
 
+    // Cキー: アクティブな写真を、いまのフォルダの下の「choice」へすぐコピー（絞り込みを繰り返すためのキー）
+    async function copyActiveToChoice() {
+      const file = getActiveFile();
+      if (!file) return;
+      if (!file.path || !window.nativeApp || !window.nativeApp.copyToChoice) {
+        toast('この機能はデスクトップ版で使えます');
+        return;
+      }
+      try {
+        const r = await window.nativeApp.copyToChoice(file.path);
+        const meta = state.metadataMap.get(file) || { rating: 0, flag: null, choice: false };
+        meta.choice = true;
+        state.metadataMap.set(file, meta);
+        scheduleSave();
+        toast(r.status === 'exists'
+          ? `「${file.name}」はすでに choice にあります（上書きしていません）`
+          : /\.png$/i.test(file.name)
+            ? `「${file.name}」を JPEG(品質100)に変換して choice へ保存しました`
+            : `「${file.name}」を choice へコピーしました`, 2500);
+      } catch (e) {
+        toast('choiceへコピーできませんでした: ' + (e && e.message ? e.message : e));
+      }
+      updateFileListSidebar(false);
+      updateMetadataUI();
+    }
+
     function togglePickTargetImage() {
       const file = getActiveFile();
       if (!file) return;
@@ -1450,12 +1815,12 @@
     let listShown = null;          // いま画面に並べている一覧
 
     function fillListItem(el, file, view) {
-      const { isActive, isDisplayedInCanvas, isPicked, index, indexA, meta } = view;
+      const { isLockedRow, isActive, isDisplayedInCanvas, isPicked, index, indexA, meta } = view;
       const cardBgClass = isDisplayedInCanvas
         ? 'bg-gray-800 font-semibold'
         : 'bg-gray-900/40 hover:bg-gray-800/80';
       const borderStyle = isActive ? 'border-2 border-lime-400 shadow-lg shadow-lime-500/20' : 'border-transparent';
-      el.className = `p-1.5 rounded cursor-pointer flex items-center space-x-2.5 text-xs transition ${borderStyle} ${cardBgClass} text-gray-200`;
+      el.className = `p-1.5 rounded cursor-pointer flex items-center space-x-2.5 text-xs transition ${borderStyle} ${cardBgClass} text-gray-200${isLockedRow ? ' row-locked' : ''}`;
       el.onclick = () => selectFileFromList(file);
 
       const starsText = meta.rating > 0 ? '★'.repeat(meta.rating) : '';
@@ -1480,7 +1845,10 @@
             <div class="text-[11px] text-amber-400 font-bold">
               ${starsText}
             </div>
-            ${isPicked ? `<span class="bg-emerald-600/35 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded text-[9px] font-bold">F10</span>` : ''}
+            <span class="flex items-center space-x-1">
+              ${meta.choice ? `<span class="mark-c px-1.5 py-0.5 rounded text-[9px] font-bold" title="choiceフォルダにコピー済み">C</span>` : ''}
+              ${isPicked ? `<span class="bg-emerald-600 text-white border border-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold">P</span>` : ''}
+            </span>
           </div>
         </div>
       `;
@@ -1490,6 +1858,7 @@
     function selectFileFromList(file) {
       const index = state.currentFiles.indexOf(file);
       if (index < 0) return;
+      if (state.lockedPanel && index === state.lockedIndex) return;   // ロック中の写真は、もう一方の画面には出さない
       let delta = 0;
       if (state.lockedPanel) {
         if (state.activePanel === 'A') {
@@ -1570,14 +1939,15 @@
         const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
 
         // 見た目に関わる値が変わった行だけ作り直す
-        const sig = [isActive ? 1 : 0, isDisplayedInCanvas ? (index === indexA ? 'A' : 'B') : 0, isPicked ? 1 : 0, meta.rating, meta.flag || ''].join('|');
+        const isLockedRow = !!state.lockedPanel && index === state.lockedIndex;
+        const sig = [isLockedRow ? 1 : 0, isActive ? 1 : 0, isDisplayedInCanvas ? (index === indexA ? 'A' : 'B') : 0, isPicked ? 1 : 0, meta.choice ? 1 : 0, meta.rating, meta.flag || ''].join('|');
         let rec = listNodes.get(file);
         if (!rec) {
           rec = { el: document.createElement('div'), sig: null };
           listNodes.set(file, rec);
         }
         if (rec.sig !== sig) {
-          fillListItem(rec.el, file, { isActive, isDisplayedInCanvas, isPicked, index, indexA, meta });
+          fillListItem(rec.el, file, { isLockedRow, isActive, isDisplayedInCanvas, isPicked, index, indexA, meta });
           rec.sig = sig;
         }
         nodes[index] = rec.el;
@@ -1646,6 +2016,12 @@
       }
       const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
       let hasContent = false;
+
+      const choiceEl = badgeEl.querySelector('[data-choice]');
+      if (choiceEl) {
+        choiceEl.classList.toggle('hidden', !meta.choice);
+        if (meta.choice) hasContent = true;
+      }
 
       if (meta.flag === 'pick') {
         flagEl.textContent = 'P';
@@ -1850,7 +2226,8 @@
 
       const files = getExportFiles();
       modalPickedList.innerHTML = '';
-      document.getElementById('exportCountLine').textContent = `書き出す写真: ${files.length} 枚`;
+      const pngCount = files.filter((f) => /\.png$/i.test(f.name)).length;
+      document.getElementById('exportCountLine').textContent = `書き出す写真: ${files.length} 枚` + (pngCount ? `（うちPNG ${pngCount} 枚は、JPEG(品質100)に変換して書き出します）` : '');
       downloadZipBtn.disabled = files.length === 0;
       downloadZipBtn.classList.toggle('opacity-50', files.length === 0);
       if (files.length === 0) {
@@ -1861,7 +2238,7 @@
           const div = document.createElement('div');
           div.className = 'flex justify-between items-center py-1 border-b border-gray-800/60';
           div.innerHTML = `
-            <span class="truncate text-emerald-300">${esc(file.name)}</span>
+            <span class="truncate text-emerald-300">${esc(file.name)}${/\.png$/i.test(file.name) ? ' → JPEG' : ''}</span>
             <span class="text-gray-500 text-[10px] ml-2 shrink-0">${m.flag === 'pick' ? 'P ' : ''}${m.rating > 0 ? '★' + m.rating + ' ' : ''}${(file.size / (1024 * 1024)).toFixed(2)} MB</span>
           `;
           modalPickedList.appendChild(div);
@@ -1949,7 +2326,7 @@
       const pickedArray = getExportFiles();
       if (pickedArray.length === 0) return;
 
-      const folderName = document.getElementById('targetSubFolder').value.trim() || 'choice';
+      const folderName = 'choice';
 
       // Windowsアプリ(Electron)で動作中は、ネイティブのフォルダ書き出しを使う
       if (window.nativeApp && window.nativeApp.exportPicked) {
@@ -2072,6 +2449,19 @@
       const savedSharp = lsGet('pci.sharp');
       if (savedSharp && ['off', 'weak', 'normal', 'strong', 'max'].includes(savedSharp)) sh.value = savedSharp;
       Display.setSharpness(sh.value);
+      const bg = document.getElementById('bgSelect');
+      const savedBg = lsGet('pci.bg');
+      if (savedBg && [...bg.options].some((o) => o.value === savedBg)) bg.value = savedBg;
+      applyBackground(bg.value);
+    }
+
+    function applyBackground(hex) {
+      document.documentElement.style.setProperty('--viewer-bg', hex);
+      const opt = [...document.getElementById('bgSelect').options].find((o) => o.value === hex);
+      const ui = opt && opt.dataset.ui;
+      if (!ui || ui === 'black') document.documentElement.removeAttribute('data-ui');
+      else document.documentElement.setAttribute('data-ui', ui);
+      Display.setBackground(hex);
     }
 
     // ---- 起動時の準備
@@ -2113,14 +2503,18 @@
         toast('モニタープロファイルを使えませんでした: ' + profileError + '\nOS標準の色管理に戻しました。', 9000);
       }
 
-      const last = lsGet('pci.lastFolder');
-      if (last) {
-        openFolderNative(last, { silent: true });
-      } else {
-        // 初回は、PC内のフォルダを最初から一覧表示する
-        folderModal.classList.remove('hidden');
-        FolderTree.open();
-      }
+      // 前回開いていたフォルダを自動で開く（設定ファイルに保存してある。開けなければフォルダ選びを出す）
+      (async () => {
+        let last = null;
+        try { last = await window.nativeApp.getLastFolder(); } catch (e) { last = null; }
+        if (!last) last = lsGet('pci.lastFolder');
+        const opened = last ? await openFolderNative(last, { silent: true }) : false;
+        if (!opened) {
+          // 初回、またはフォルダが見つからないときは、PC内のフォルダを一覧表示する
+          folderModal.classList.remove('hidden');
+          FolderTree.open();
+        }
+      })();
     }
 
     // ---- フォルダ / ファイルを開く
@@ -2149,6 +2543,7 @@
       if (res.files.length === 0) toast('このフォルダには画像（JPEG / PNG / WebP）がありません');
       await adoptRecords({ label: dirPath, dir: dirPath, records: res.files, mode: 'folder' });
       lsSet('pci.lastFolder', dirPath);
+      try { window.nativeApp.setLastFolder(dirPath).catch(() => {}); } catch (e) { /* 保存できなくても続行 */ }
       return true;
     }
 
@@ -2162,7 +2557,7 @@
       state.allFiles = records;
       state.pickedFiles.clear();
       state.metadataMap.clear();
-      records.forEach((f) => state.metadataMap.set(f, { rating: 0, flag: null }));
+      records.forEach((f) => state.metadataMap.set(f, { rating: 0, flag: null, choice: false }));
 
       // 前回までの星評価・Pick/Rejectを復元する
       state.savedBase = {};
@@ -2176,7 +2571,7 @@
       records.forEach((f) => {
         const s = state.savedBase[f.dir][f.name];
         if (!s) return;
-        state.metadataMap.set(f, { rating: s.rating || 0, flag: s.flag || null });
+        state.metadataMap.set(f, { rating: s.rating || 0, flag: s.flag || null, choice: !!s.choice });
         if (s.flag === 'pick') state.pickedFiles.add(f);
         restored++;
       });
@@ -2223,7 +2618,7 @@
       merged.forEach((f) => {
         const old = oldByName.get(f.name);
         const m = old ? state.metadataMap.get(old) : null;
-        nextMeta.set(f, m ? { rating: m.rating, flag: m.flag } : { rating: 0, flag: null });
+        nextMeta.set(f, m ? { rating: m.rating, flag: m.flag, choice: !!m.choice } : { rating: 0, flag: null, choice: false });
       });
 
       const added = merged.filter((f) => !oldByName.has(f.name)).length;
@@ -2252,7 +2647,7 @@
         : '更新しました（変更はありません）', 3000);
     }
 
-    // ---- ライブ表示（カメラから写真が転送されてきたら、最新の1枚を画面Aに自動で出す）
+    // ---- ライブ表示（カメラから写真が転送されてきたら、最新の1枚を画面Bに自動で出す）
     // 1秒弱ごとにフォルダを調べ、大きさと更新時刻が2回続けて同じ写真だけを「転送完了」とみなして取り込む。
     const live = { on: false, timer: 0, busy: false, seen: new Map() };
     const LIVE_INTERVAL_MS = 800;
@@ -2276,7 +2671,7 @@
       live.seen = new Map();
       if (live.on) {
         live.timer = setInterval(livePoll, LIVE_INTERVAL_MS);
-        toast('ライブ表示ON：増えた写真を自動で画面Aに出します。', 3000);
+        toast('ライブ表示ON：増えた写真を自動で画面Bに出します。', 3000);
       }
       updateLiveButton();
     }
@@ -2317,7 +2712,7 @@
         const old = byName.get(nf.name);
         const m = old ? state.metadataMap.get(old) : null;
         if (old) { state.metadataMap.delete(old); state.pickedFiles.delete(old); }
-        state.metadataMap.set(nf, m ? { rating: m.rating, flag: m.flag } : { rating: 0, flag: null });
+        state.metadataMap.set(nf, m ? { rating: m.rating, flag: m.flag, choice: !!m.choice } : { rating: 0, flag: null, choice: false });
         if (m && m.flag === 'pick') state.pickedFiles.add(nf);
         byName.set(nf.name, nf);
       });
@@ -2328,7 +2723,7 @@
       // 取り込んだ中で一番新しい写真（更新時刻が同じなら名前順で後ろ）
       const newest = ready.slice().sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name, undefined, { numeric: true }))[ready.length - 1];
       const newIdx = state.currentFiles.indexOf(newest);
-      const canSwitch = live.on && state.lockedPanel !== 'A' && newIdx >= 0;
+      const canSwitch = live.on && state.lockedPanel !== 'B' && newIdx >= 0;   // 新しい写真は画面Bに出す
 
       if (totalCountEl) totalCountEl.textContent = state.allFiles.length;
       if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
@@ -2340,8 +2735,8 @@
           const li = state.currentFiles.findIndex((f) => f.name === lockedName);
           if (li >= 0) state.lockedIndex = li;
         }
-        state.cursorPanel = 'A';
-        setActivePanel('A');
+        state.cursorPanel = 'B';
+        setActivePanel('B');
         loadAndRender(true, { dir: 1 });
       } else {
         // 画面は切り替えず、並びの変化だけ反映する
@@ -2371,7 +2766,7 @@
       state.allFiles.forEach((f) => {
         if (f.dir !== dir) return;
         const m = state.metadataMap.get(f) || { rating: 0, flag: null };
-        if (m.rating > 0 || m.flag) items[f.name] = { rating: m.rating, flag: m.flag };
+        if (m.rating > 0 || m.flag || m.choice) items[f.name] = { rating: m.rating, flag: m.flag, choice: !!m.choice };
         else delete items[f.name];
       });
       return items;

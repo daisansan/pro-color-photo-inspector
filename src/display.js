@@ -19,7 +19,7 @@ const Display = (() => {
   const SURFACE_LIMIT = 10;    // 表示用サーフェスの保持数
   const HIST_SIDE = 320;       // ヒストグラム計算用に縮小する長辺
   const HEAD_BYTES = 262144;   // EXIF読み取り用に先頭だけ保持するバイト数
-  const BG = '#0a0a0a';
+  let BG = '#0a0a0a';          // 写真の周りの背景色（設定で変更できる）
 
   const entries = new Map();   // file -> {file,bitmap,w,h,px,head,hist}   （挿入順 = 使った順）
   const loading = new Map();   // file -> Promise<entry|null>
@@ -342,7 +342,7 @@ const Display = (() => {
 
   function paintMessage(p, text) {
     paintBlank(p);
-    p.ctx.fillStyle = '#9ca3af';
+    p.ctx.fillStyle = bgIsLight() ? '#4b5563' : '#9ca3af';
     p.ctx.font = `${14 * (window.devicePixelRatio || 1)}px sans-serif`;
     p.ctx.textAlign = 'center';
     p.ctx.fillText(text, p.canvas.width / 2, p.canvas.height / 2);
@@ -635,6 +635,18 @@ const Display = (() => {
     surfaces.clear();
   }
 
+  function bgIsLight() {
+    const n = parseInt(BG.slice(1), 16);
+    return (((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) > 140;
+  }
+
+  function setBackground(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex) || hex.toLowerCase() === BG.toLowerCase()) return;
+    BG = hex;
+    profileId++;
+    surfaces.clear();
+  }
+
   function setDither(on) {
     const v = !!on;
     if (v === ditherOn) return;
@@ -695,7 +707,7 @@ const Display = (() => {
 
   return {
     attach, show, prefetch, paintAll, onResize, rebuildAll,
-    setProfile, setWhiteMatch, setDither, getProfileParsed, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
+    setProfile, setWhiteMatch, setDither, setBackground, getProfileParsed, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
     hasProfile: () => !!profile,
     profileName: () => (profile ? profile.name : ''),
     _debug: { entries, surfaces, panels, buildSurface, stepDown, dims: surfaceDims },

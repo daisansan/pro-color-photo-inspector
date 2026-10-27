@@ -1,10 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-const { copyPickedFiles, sanitizeFolderName } = require('./lib/export');
+const { copyPickedFiles, copyOneToChoice, sanitizeFolderName, IMAGE_EXTS } = require('./lib/export');
 const imginfo = require('./lib/imginfo');
 const fsb = require('./lib/fsbrowse');
 const selections = require('./lib/selections');
@@ -60,7 +60,7 @@ if (!app.requestSingleInstanceLock()) {
   app.setAppUserModelId('com.procolorphotoinspector.app');
 
   app.whenReady().then(() => {
-    // F10 がメニューバー操作として奪われないよう、メニューは使わない
+    // メニューバーは使わない（Altキーなどでメニューが出て、キー操作の邪魔にならないように）
     Menu.setApplicationMenu(null);
     setupThumbnailProtocol();
     createWindow();
@@ -236,6 +236,23 @@ handle('window:set-fullscreen', async (on) => {
   return mainWindow ? mainWindow.isFullScreen() : false;
 });
 
+// PNG画像を、JPEG(品質100)のデータにする。透明な部分は白にする。
+async function pngToJpeg(filePath) {
+  const img = nativeImage.createFromPath(filePath);
+  if (img.isEmpty()) throw new Error('PNGを読み込めませんでした');
+  const { width, height } = img.getSize();
+  const bgra = img.toBitmap();                       // B,G,R,A の並び
+  const out = Buffer.alloc(bgra.length);
+  for (let i = 0; i < bgra.length; i += 4) {
+    const a = bgra[i + 3] / 255;
+    out[i] = Math.round(bgra[i] * a + 255 * (1 - a));
+    out[i + 1] = Math.round(bgra[i + 1] * a + 255 * (1 - a));
+    out[i + 2] = Math.round(bgra[i + 2] * a + 255 * (1 - a));
+    out[i + 3] = 255;
+  }
+  return nativeImage.createFromBitmap(out, { width, height }).toJPEG(100);
+}
+
 // --- 選別した写真の書き出し: 保存先フォルダを選び、その中にサブフォルダを作ってコピーする
 handle('export-picked', async (payload) => {
   const filePaths = Array.isArray(payload && payload.filePaths)
@@ -258,9 +275,55 @@ handle('export-picked', async (payload) => {
     return { canceled: true, dir: '', copied: 0, failed: [] };
   }
 
-  const result = await copyPickedFiles(filePaths, picked.filePaths[0], subName);
+  const result = await copyPickedFiles(filePaths, picked.filePaths[0], subName, { jpegConverter: pngToJpeg });
   return { canceled: false, ...result };
 });
+
+// --- グリッド一覧で選んだ写真を、ごみ箱へ移す（確認の窓を出す。ごみ箱からは元に戻せる）
+handle('trash-files', async (paths) => {
+  const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && path.isAbsolute(p) && IMAGE_EXTS.has(path.extname(p).toLowerCase())) : [];
+  if (list.length === 0) return { canceled: true, trashed: [], failed: [] };
+
+  const e2eDir = process.env.PCI_E2E ? process.env.PCI_E2E_TRASH_DIR : '';   // 自動テスト用（通常は使われない）
+  if (!e2eDir) {
+    const names = list.slice(0, 8).map((p) => path.basename(p)).join('\n') + (list.length > 8 ? `\n…ほか ${list.length - 8} 枚` : '');
+    const r = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['ごみ箱へ移動', 'キャンセル'],
+      defaultId: 1,
+      cancelId: 1,
+      title: '写真を削除',
+      message: `${list.length} 枚の写真をごみ箱へ移動します。`,
+      detail: names + '\n\n元の写真ファイルがフォルダから無くなります（ごみ箱から元に戻せます）。',
+    });
+    if (r.response !== 0) return { canceled: true, trashed: [], failed: [] };
+  }
+
+  const trashed = [];
+  const failed = [];
+  for (const p of list) {
+    try {
+      if (e2eDir) await fs.promises.rename(p, path.join(e2eDir, path.basename(p)));
+      else await shell.trashItem(p);
+      trashed.push(p);
+    } catch (e) {
+      failed.push({ name: path.basename(p), reason: e && e.message ? e.message : String(e) });
+    }
+  }
+  return { canceled: false, trashed, failed };
+});
+
+// --- 最後に開いていたフォルダ（設定ファイルに保存。次の起動で自動的に開く）
+handle('settings:get-last-folder', async () => (typeof settings.lastFolder === 'string' ? settings.lastFolder : null));
+handle('settings:set-last-folder', async (p) => {
+  if (typeof p !== 'string' || !path.isAbsolute(p)) return false;
+  settings.lastFolder = p;
+  try { saveSettings(userDataDir, settings); } catch (e) { return false; }
+  return true;
+});
+
+// --- Cキー: アクティブな写真を、その写真のあるフォルダの下の「choice」フォルダへ、すぐコピーする
+handle('copy-to-choice', async (filePath) => copyOneToChoice(filePath, 'choice', { jpegConverter: pngToJpeg }));
 
 // --- PC内のフォルダ閲覧
 handle('fs:roots', async () => {

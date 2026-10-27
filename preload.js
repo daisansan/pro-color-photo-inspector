@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('nativeApp', {
   },
 
   // 選別した写真をフォルダへ書き出す（保存先はダイアログで選ぶ）
+  trashFiles: (paths) => call('trash-files', paths),
+  getLastFolder: () => call('settings:get-last-folder'),
+  setLastFolder: (p) => call('settings:set-last-folder', p),
+  copyToChoice: (filePath) => call('copy-to-choice', filePath),
   exportPicked: (filePaths, subFolderName) => call('export-picked', { filePaths, subFolderName }),
 
   // PC内のフォルダ閲覧

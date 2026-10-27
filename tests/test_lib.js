@@ -49,16 +49,19 @@ const { loadSettings, saveSettings } = require('../lib/settings');
   assert.deepStrictEqual(sel.loadSelections(sdir, path.join(root, 'photos', 'sub')), {}, '別フォルダとは混ざらない');
   assert.strictEqual(sel.fileFor(sdir, 'C:\\Photos\\A', 'win32'), sel.fileFor(sdir, 'c:\\photos\\a', 'win32'), 'Windowsは大文字小文字を区別しない');
   assert.ok(fs.readdirSync(sdir).every((f) => f.endsWith('.json')), '一時ファイルが残らない');
+  r = sel.saveSelections(sdir, folderA, { 'C1.jpg': { rating: 0, flag: null, choice: true }, 'C2.jpg': { rating: 2, flag: 'pick', choice: true }, 'N.jpg': { rating: 1, flag: null, choice: 'yes' } });
+  assert.strictEqual(r.saved, 3, 'Cだけでも保存する');
+  assert.deepStrictEqual(sel.loadSelections(sdir, folderA), { 'C1.jpg': { rating: 0, flag: null, choice: true }, 'C2.jpg': { rating: 2, flag: 'pick', choice: true }, 'N.jpg': { rating: 1, flag: null } }, 'Cは真偽値trueのときだけ');
   r = sel.saveSelections(sdir, folderA, {});
   assert.strictEqual(r.saved, 0); assert.deepStrictEqual(sel.loadSelections(sdir, folderA), {}); assert.strictEqual(fs.readdirSync(sdir).length, 0, '空にしたらファイルも消える');
   fs.writeFileSync(sel.fileFor(sdir, folderA), '{壊れたJSON'); assert.deepStrictEqual(sel.loadSelections(sdir, folderA), {}, '壊れたファイルでも落ちない');
 
   // ---------- settings
   const setDir = path.join(root, 'settings');
-  assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null });
+  assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null });
   saveSettings(setDir, { monitorProfilePath: 'C:\\x.icc' });
   assert.strictEqual(loadSettings(setDir).monitorProfilePath, 'C:\\x.icc');
-  fs.writeFileSync(path.join(setDir, 'settings.json'), 'null'); assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null });
+  fs.writeFileSync(path.join(setDir, 'settings.json'), 'null'); assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null });
 
   // ---------- thumbs
   let made = 0;
@@ -110,4 +113,46 @@ const { loadSettings, saveSettings } = require('../lib/settings');
   const r8 = applyOrientation(src, 2, 1, 8);
   assert2.deepStrictEqual([r8.width, r8.height, r8.data[0], r8.data[4]], [1, 2, 2, 1]);
   console.log('IMGINFO TESTS PASSED');
+})().catch((e) => { console.error(e); process.exit(1); });
+
+// ---- F10: 写真1枚を choice へコピー
+(async () => {
+  const { copyOneToChoice } = require('../lib/export');
+  const os = require('os'); const fs2 = require('fs'); const path2 = require('path');
+  const d = fs2.mkdtempSync(path2.join(os.tmpdir(), 'choice-'));
+  fs2.writeFileSync(path2.join(d, 'a.jpg'), 'AAA');
+  const r1 = await copyOneToChoice(path2.join(d, 'a.jpg'), 'choice');
+  assert.strictEqual(r1.status, 'copied');
+  assert.strictEqual(fs2.readFileSync(path2.join(d, 'choice', 'a.jpg'), 'utf8'), 'AAA');
+  assert.ok(fs2.existsSync(path2.join(d, 'a.jpg')), '元の写真は残る');
+  fs2.writeFileSync(path2.join(d, 'choice', 'a.jpg'), 'KEEP');
+  const r2 = await copyOneToChoice(path2.join(d, 'a.jpg'), 'choice');
+  assert.strictEqual(r2.status, 'exists');
+  assert.strictEqual(fs2.readFileSync(path2.join(d, 'choice', 'a.jpg'), 'utf8'), 'KEEP', '上書きしない');
+  // 絞り込みの繰り返し: choice の中の写真 → choice/choice
+  const r3 = await copyOneToChoice(path2.join(d, 'choice', 'a.jpg'), 'choice');
+  assert.strictEqual(r3.status, 'copied');
+  assert.ok(fs2.existsSync(path2.join(d, 'choice', 'choice', 'a.jpg')));
+  await assert.rejects(() => copyOneToChoice(path2.join(d, 'x.txt'), 'choice'));
+  await assert.rejects(() => copyOneToChoice('relative.jpg', 'choice'));
+  // PNG → JPEG変換（変換器を渡したときだけ）
+  const conv = async (src) => Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  fs2.writeFileSync(path2.join(d, 'p.png'), 'PNGDATA');
+  fs2.writeFileSync(path2.join(d, 'q.jpg'), 'JPGDATA');
+  const rp = await copyOneToChoice(path2.join(d, 'p.png'), 'choice', { jpegConverter: conv });
+  assert.strictEqual(rp.status, 'copied');
+  assert.ok(fs2.existsSync(path2.join(d, 'choice', 'p.jpg')) && !fs2.existsSync(path2.join(d, 'choice', 'p.png')), 'PNGはJPEGとして保存');
+  assert.strictEqual((await copyOneToChoice(path2.join(d, 'p.png'), 'choice', { jpegConverter: conv })).status, 'exists');
+  await copyOneToChoice(path2.join(d, 'q.jpg'), 'choice', { jpegConverter: conv });
+  assert.strictEqual(fs2.readFileSync(path2.join(d, 'choice', 'q.jpg'), 'utf8'), 'JPGDATA', 'JPEGはそのままコピー');
+  await copyOneToChoice(path2.join(d, 'p.png'), 'choice');
+  assert.ok(fs2.existsSync(path2.join(d, 'choice', 'p.png')), '変換器なしなら従来どおりコピー');
+  const { copyPickedFiles } = require('../lib/export');
+  const dest = fs2.mkdtempSync(path2.join(os.tmpdir(), 'exp-'));
+  const rr = await copyPickedFiles([path2.join(d, 'p.png'), path2.join(d, 'q.jpg')], dest, 'out', { jpegConverter: conv });
+  assert.strictEqual(rr.copied, 2);
+  assert.deepStrictEqual(fs2.readdirSync(path2.join(dest, 'out')).sort(), ['p.jpg', 'q.jpg']);
+  const rr2 = await copyPickedFiles([path2.join(d, 'p.png')], dest, 'out', { jpegConverter: conv });
+  assert.ok(fs2.existsSync(path2.join(dest, 'out', 'p (2).jpg')), '同名は連番');
+  console.log('CHOICE TESTS PASSED');
 })().catch((e) => { console.error(e); process.exit(1); });
