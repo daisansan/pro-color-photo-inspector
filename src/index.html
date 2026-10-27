@@ -934,9 +934,25 @@
       render();
     }
 
+    // マウスホイールで写真を送る（手前に回す=次、奥に回す=前）。100%表示中は無効。通常・大画面表示とも同じ
+    let wheelAcc = 0, wheelTimer = null;
+    function onViewerWheel(e) {
+      e.preventDefault();
+      if (state.isZoomed || anyModalOpen() || state.currentFiles.length === 0) return;
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 33;        // 行単位 → ピクセル相当
+      else if (e.deltaMode === 2) dy *= 100;
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => { wheelAcc = 0; }, 250);
+      wheelAcc += dy;
+      while (wheelAcc >= 100) { wheelAcc -= 100; nextImage(); }
+      while (wheelAcc <= -100) { wheelAcc += 100; prevImage(); }
+    }
+
     function attachCanvasEvents(canvas, panel) {
       canvas.addEventListener('mousedown', (e) => startZoom(e, canvas, panel));
       canvas.addEventListener('mousemove', (e) => { if (e.buttons === 1) updateZoomPoint(e, canvas); });
+      canvas.addEventListener('wheel', onViewerWheel, { passive: false });
       canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startZoom(e, canvas, panel); }, { passive: false });
       canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateZoomPoint(e, canvas); }, { passive: false });
     }
