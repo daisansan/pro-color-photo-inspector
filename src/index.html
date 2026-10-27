@@ -20,6 +20,7 @@
   <script src="display.js"></script>
   <script src="foldertree.js"></script>
   <style>
+    body.resizing-hide #canvasA, body.resizing-hide #canvasB { visibility: hidden; }
     .row-locked { border: 2px solid #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,.55) !important; }
     .row-locked.border-lime-400 { outline: 2px solid #a3e635; outline-offset: 1px; }
     /* Enterキーで切り替える「2画面だけの大画面表示」: ヘッダー・両サイドバー・ツールバーを隠す */
@@ -869,15 +870,29 @@
       });
     }
 
+    // 通常⇄全画面の切り替え中は、サイズが変わりきるまで画像を隠す（引き伸ばされた絵を見せない）
+    let revealTimer = null;
+    function hideCanvasesDuringResize() {
+      document.body.classList.add('resizing-hide');
+      clearTimeout(revealTimer);
+      revealTimer = setTimeout(() => document.body.classList.remove('resizing-hide'), 600);
+    }
+
     function handleResize() {
       sizeCanvases();
       Display.onResize();
+      if (document.body.classList.contains('resizing-hide')) {
+        // 最後のリサイズから、描き直しが終わるまで待ってから表示する
+        clearTimeout(revealTimer);
+        revealTimer = setTimeout(() => document.body.classList.remove('resizing-hide'), 260);
+      }
     }
 
     // 2画面だけの大画面表示 ⇄ 通常表示
     function setFocusMode(on) {
       const body = document.body;
       if (body.classList.contains('focus-mode') === on) return;
+      hideCanvasesDuringResize();
       body.classList.toggle('focus-mode', on);
       // デスクトップ版では、ウィンドウのフルスクリーンも連動させる（タイトルバー・タスクバーを隠す）
       if (IS_NATIVE && window.nativeApp.setFullScreen) window.nativeApp.setFullScreen(on).catch(() => {});
@@ -1578,11 +1593,21 @@
         state.lockedPanel = null;
       } else {
         const cur = getIndices();   // ロックする前の並びで、枠のある画面の写真を固定する
+        const wasLocked = !!state.lockedPanel;
         state.lockedPanel = state.activePanel;
         state.lockedIndex = state.activePanel === 'A' ? cur.indexA : cur.indexB;
-        // もう一方の画面は、ロックする前に出ていた写真のまま（同じ写真が2枚並ばないように）
-        const other = state.activePanel === 'A' ? cur.indexB : cur.indexA;
-        if (other >= 0) state.currentIndex = other;
+        if (wasLocked) {
+          // ロックを別の写真に移した: 画面Bにロックしたなら画面Aに一つ前の写真、画面Aにロックしたなら画面Bに一つ次の写真（端なら反対側）
+          const last = state.currentFiles.length - 1;
+          const prefer = state.lockedPanel === 'B' ? state.lockedIndex - 1 : state.lockedIndex + 1;
+          const alt = state.lockedPanel === 'B' ? state.lockedIndex + 1 : state.lockedIndex - 1;
+          if (prefer >= 0 && prefer <= last) state.currentIndex = prefer;
+          else if (alt >= 0 && alt <= last) state.currentIndex = alt;
+        } else {
+          // 初めてのロック: もう一方の画面は、ロックする前に出ていた写真のまま（同じ写真が2枚並ばないように）
+          const other = state.activePanel === 'A' ? cur.indexB : cur.indexA;
+          if (other >= 0) state.currentIndex = other;
+        }
       }
       updateLockBadgeUI();
       updatePanelBorders();
