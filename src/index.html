@@ -168,10 +168,12 @@
           <option value="450">ゆっくり</option>
         </select>
         <span class="text-gray-400 text-[11px]">画質:</span>
-        <select id="sharpSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="画面に合わせて写真を縮めるときの画質。「きれい」「くっきり」は、段階的に縮めて弱いシャープをかけます（表示だけ。元の写真は変わりません）。大きな写真に飛ぶときは、少し時間がかかります">
+        <select id="sharpSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="画面に合わせて写真を縮めるときの画質。「速い」以外は、段階的に縮めてシャープをかけます（強さは きれい<くっきり<強め<最強）。100%表示にも同じ強さのシャープがかかります。表示だけで、元の写真は変わりません。ピント確認など、元の画素をそのまま見たいときは「速い」にしてください">
           <option value="off">速い</option>
           <option value="weak" selected>きれい</option>
           <option value="normal">くっきり</option>
+          <option value="strong">強め</option>
+          <option value="max">最強</option>
         </select>
       </div>
     </div>
@@ -489,6 +491,16 @@
 
       <div class="text-[11px] text-gray-400">このPCに入っているプロファイル（新しい順）</div>
       <div id="profileList" class="bg-gray-950 border border-gray-800 rounded-lg p-1.5 h-44 overflow-y-auto custom-scrollbar text-xs space-y-0.5"></div>
+
+      <label class="flex items-start space-x-2 text-xs text-gray-300 cursor-pointer">
+        <input id="whiteMatchChk" type="checkbox" class="mt-0.5" checked>
+        <span>白を合わせる（相対的色域を維持）<span class="block text-[11px] text-gray-500">写真の白(255,255,255)を、モニターの最も明るい白にぴったり合わせます。ハイライトの抜け感が変わります。表示だけで、写真は変わりません</span></span>
+      </label>
+      <label class="flex items-start space-x-2 text-xs text-gray-300 cursor-pointer">
+        <input id="ditherChk" type="checkbox" class="mt-0.5" checked>
+        <span>ディザを使う（階調の段差を目立たなくする）<span class="block text-[11px] text-gray-500">色変換の結果を8bitにするとき、微小なノイズを足して滑らかにします（Photoshopの「ディザを使用」と同じ考え方）。表示だけで、写真は変わりません</span></span>
+      </label>
+      <div id="profileDiag" class="hidden text-[11px] rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 leading-relaxed whitespace-pre-line break-all text-gray-400"></div>
 
       <div id="profileDetail" class="hidden text-xs rounded-lg border px-3 py-2 leading-relaxed whitespace-pre-line break-all"></div>
 
@@ -2058,7 +2070,7 @@
       Display.setTransitionSpeed(parseInt(sp.value, 10));
       const sh = document.getElementById('sharpSelect');
       const savedSharp = lsGet('pci.sharp');
-      if (savedSharp && ['off', 'weak', 'normal'].includes(savedSharp)) sh.value = savedSharp;
+      if (savedSharp && ['off', 'weak', 'normal', 'strong', 'max'].includes(savedSharp)) sh.value = savedSharp;
       Display.setSharpness(sh.value);
     }
 
@@ -2385,6 +2397,8 @@
       if (!info) return;
       try {
         const parsed = ICC.parseProfile(info.bytes);
+        Display.setWhiteMatch(lsGet('pci.whiteMatch') !== '0');
+        Display.setDither(lsGet('pci.dither') !== '0');
         Display.setProfile(parsed, parsed.description || info.name);
         state.activeProfileFile = info.name;
       } catch (e) {
@@ -2414,6 +2428,24 @@
       const p = parsed.info.primaries;
       const xy = (v) => `(${v[0].toFixed(3)}, ${v[1].toFixed(3)})`;
       return `説明: ${parsed.description || '（なし）'}\n階調(γの目安): ${gamma}\n原色 R${xy(p.r)}  G${xy(p.g)}  B${xy(p.b)}`;
+    }
+
+    // 診断: 使用中のプロファイルの中身と、sRGBの白がモニター値で何になるか
+    function profileDiagnostics(parsed) {
+      const i = parsed.info;
+      let w = null;
+      try { w = ICC.whiteReport(parsed, 'srgb'); } catch (e) { w = null; }
+      const f = (v) => v.join(', ');
+      const xyz = i.whiteXYZ.map((v) => v.toFixed(4)).join(', ');
+      const lines = [
+        `【診断】 ICCバージョン ${i.version} / タグ: ${i.tags.join(' ')}`,
+        `LUT変換表(A2B/B2A): ${i.hasLut ? 'あり（このアプリは行列＋階調のみ使用。Photoshopは変換表を使う可能性）' : 'なし（行列＋階調のみ）'}`,
+        `プロファイルの白(三原色の合計 XYZ): ${xyz}  ［D50基準: 0.9642, 1.0000, 0.8249］`,
+      ];
+      if (w) {
+        lines.push(`sRGB白(255,255,255) → モニター値  白合わせあり: ${f(w.matched)}  /  なし: ${f(w.plain)}`);
+      }
+      return lines.join('\n');
     }
 
     function setupProfileModal() {
@@ -2449,7 +2481,31 @@
         }
       }
 
+      const whiteChk = document.getElementById('whiteMatchChk');
+      const diagEl = document.getElementById('profileDiag');
+      function updateDiag() {
+        const parsed = Display.getProfileParsed();
+        whiteChk.disabled = !parsed;
+        if (!parsed) { diagEl.classList.add('hidden'); return; }
+        diagEl.textContent = profileDiagnostics(parsed);
+        diagEl.classList.remove('hidden');
+      }
+      const ditherChk = document.getElementById('ditherChk');
+      ditherChk.addEventListener('change', () => {
+        Display.setDither(ditherChk.checked);
+        lsSet('pci.dither', ditherChk.checked ? '1' : '0');
+        Display.rebuildAll();
+      });
+      whiteChk.addEventListener('change', () => {
+        Display.setWhiteMatch(whiteChk.checked);
+        lsSet('pci.whiteMatch', whiteChk.checked ? '1' : '0');
+        Display.rebuildAll();
+      });
+
       async function open() {
+        whiteChk.checked = lsGet('pci.whiteMatch') !== '0';
+        ditherChk.checked = lsGet('pci.dither') !== '0';
+        updateDiag();
         current.textContent = Display.hasProfile()
           ? `使用中: ${state.activeProfileFile || ''}（${Display.profileName()}）`
           : '使用していません（OSの標準の色管理）';

@@ -31,9 +31,11 @@ const Display = (() => {
   let profile = null;          // ICC: {name, parsed}
   const transforms = {};       // ICC: 画像の色空間ごとの変換器
   let profileId = 0;
+  let ditherOn = true;         // ICC: 8bitに丸める前にディザ（微小ノイズ）を足す
+  let whiteMatch = true;       // ICC: 画像の白をモニターの白にぴったり合わせる（相対的色域を維持）
   let style = 'slide';         // 'slide' | 'fade' | 'none'
-  let sharpLevel = 'weak';     // 'off' | 'weak' | 'normal' … 縮小後に足すシャープの強さ
-  const SHARP_AMOUNT = { off: 0, weak: 0.35, normal: 0.7 };
+  let sharpLevel = 'weak';     // 'off' | 'weak' | 'normal' | 'strong' | 'max' … 縮小後に足すシャープの強さ
+  const SHARP_AMOUNT = { off: 0, weak: 0.35, normal: 0.7, strong: 1.1, max: 1.6 };
   let speedMs = 380;           // スライドの所要時間(ミリ秒)。フェードなどは、この比率で伸び縮みする
   let lastNav = 0;
   let rebuildTimer = 0;
@@ -207,7 +209,7 @@ const Display = (() => {
 
   function transformFor(source) {
     if (!profile) return null;
-    if (!transforms[source]) transforms[source] = ICC.createTransform(profile.parsed, source);
+    if (!transforms[source]) transforms[source] = ICC.createTransform(profile.parsed, source, { whiteMatch, dither: ditherOn });
     return transforms[source];
   }
 
@@ -352,6 +354,15 @@ const Display = (() => {
     if (p.surf) p.ctx.drawImage(shownCanvas(p.surf), 0, 0);
   }
 
+  // 100%表示にも、選んだ画質のシャープをかける（見えている範囲だけ）。「速い」のときは、元の画素そのまま
+  function sharpenPanelCanvas(p) {
+    const amount = SHARP_AMOUNT[sharpLevel] || 0;
+    if (!(amount > 0) || typeof Sharpen === 'undefined' || !p.ctx) return;
+    const img = p.ctx.getImageData(0, 0, p.canvas.width, p.canvas.height);
+    Sharpen.sharpen(img.data, p.canvas.width, p.canvas.height, amount);
+    p.ctx.putImageData(img, 0, 0);
+  }
+
   // 100%等倍表示（クリック長押し）。ICC使用中は、見えている範囲だけを変換する。
   function paintZoom(p) {
     const entry = p.file ? entries.get(p.file) : null;
@@ -368,6 +379,7 @@ const Display = (() => {
       p.ctx.imageSmoothingEnabled = false;
       p.ctx.drawImage(entry.bitmap, offX, offY);
       p.ctx.imageSmoothingEnabled = true;
+      sharpenPanelCanvas(p);
       adjustPanelCanvas(p);
       return;
     }
@@ -378,6 +390,8 @@ const Display = (() => {
     work.ctx.imageSmoothingEnabled = false;
     work.ctx.drawImage(entry.bitmap, offX, offY);
     const img = work.ctx.getImageData(0, 0, W, H, { colorSpace: src });
+    const zAmount = SHARP_AMOUNT[sharpLevel] || 0;
+    if (zAmount > 0 && typeof Sharpen !== 'undefined') Sharpen.sharpen(img.data, W, H, zAmount);
     transformFor(src).apply(img.data, img.data);
     p.ctx.putImageData(new ImageData(img.data, W, H, { colorSpace: 'srgb' }), 0, 0);
     adjustPanelCanvas(p);
@@ -612,6 +626,28 @@ const Display = (() => {
     surfaces.clear();
   }
 
+  function setWhiteMatch(on) {
+    const v = !!on;
+    if (v === whiteMatch) return;
+    whiteMatch = v;
+    Object.keys(transforms).forEach((k) => delete transforms[k]);
+    profileId++;
+    surfaces.clear();
+  }
+
+  function setDither(on) {
+    const v = !!on;
+    if (v === ditherOn) return;
+    ditherOn = v;
+    Object.keys(transforms).forEach((k) => delete transforms[k]);
+    profileId++;
+    surfaces.clear();
+  }
+
+  function getProfileParsed() {
+    return profile ? profile.parsed : null;
+  }
+
   // 縮小後のシャープの強さ: 'off' | 'weak' | 'normal'。変えたら、表示用の絵を作り直す
   function setSharpness(level) {
     const l = Object.prototype.hasOwnProperty.call(SHARP_AMOUNT, level) ? level : 'weak';
@@ -659,7 +695,7 @@ const Display = (() => {
 
   return {
     attach, show, prefetch, paintAll, onResize, rebuildAll,
-    setProfile, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
+    setProfile, setWhiteMatch, setDither, getProfileParsed, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
     hasProfile: () => !!profile,
     profileName: () => (profile ? profile.name : ''),
     _debug: { entries, surfaces, panels, buildSurface, stepDown, dims: surfaceDims },

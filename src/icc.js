@@ -5,7 +5,8 @@
  *       Windowsのキャリブレーションで作られる多くのモニタープロファイルがこの形式です。
  * 非対応: LUT型（A2B0/B2A0のみで行列を持たない）のプロファイル。読み込み時に分かるようにエラーを返します。
  *
- * 変換: 画像の色(sRGB / Display P3) → 線形RGB → XYZ(D50) → モニターの線形RGB → モニターの階調(逆TRC)
+ * 変換: 画像の色(sRGB / Display P3) → 線形RGB → XYZ(D50) → [白点合わせ] → モニターの線形RGB → モニターの階調(逆TRC)
+ *       白点合わせ(相対的色域を維持): 画像の白(D50)が、モニターの白(プロファイルの三原色の合計)にぴったり合うようにXYZを拡縮する。
  * ブラウザ(file://)でもNode(テスト)でも読み込めるようにしています。
  */
 (function (root, factory) {
@@ -193,6 +194,9 @@
     };
     const chroma = (v) => { const s = v[0] + v[1] + v[2]; return [v[0] / s, v[1] / s]; };
 
+    let wtpt = null;
+    try { if (tags.wtpt) wtpt = readXYZ(dv, tags.wtpt.off); } catch (e) { wtpt = null; }
+
     return {
       description: tags.desc ? readDesc(dv, tags.desc.off, tags.desc.size) : '',
       matrix: [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]], // 線形RGB → XYZ(D50)
@@ -200,6 +204,11 @@
       info: {
         gamma: [gammaOf(curves.r), gammaOf(curves.g), gammaOf(curves.b)],
         primaries: { r: chroma(r), g: chroma(g), b: chroma(b) },
+        version: u8[8] + '.' + (u8[9] >> 4),
+        tags: Object.keys(tags),
+        hasLut: ['A2B0', 'A2B1', 'A2B2', 'B2A0', 'B2A1', 'B2A2'].some((t) => !!tags[t]),
+        whiteXYZ: [r[0] + g[0] + b[0], r[1] + g[1] + b[1], r[2] + g[2] + b[2]],   // プロファイルの「RGB全部最大」の色(PCS)
+        wtpt,
       },
     };
   }
@@ -208,8 +217,9 @@
   const ENC_SIZE = 65536;
 
   // 線形値(0..1) → モニターの8bit値 の対応表を作る（カーブの逆関数）
+  // 結果は 0..255 の小数（8bitに丸める前の値）。丸めは apply 側で行う（ディザのため）
   function buildEncodeTable(curve) {
-    const table = new Uint8Array(ENC_SIZE);
+    const table = new Float32Array(ENC_SIZE);
     let lo = 0;
     // 順方向カーブを粗くサンプリングして逆引き（単調増加を前提）
     const N = 4096;
@@ -225,7 +235,7 @@
         const t = y1 > y0 ? (y - y0) / (y1 - y0) : 0;
         x = (lo + Math.min(Math.max(t, 0), 1)) / N;
       }
-      table[k] = Math.max(0, Math.min(255, Math.round(x * 255)));
+      table[k] = Math.max(0, Math.min(255, x * 255));
     }
     return table;
   }
@@ -235,9 +245,21 @@
    * @param profile parseProfile の結果
    * @param source  'srgb' | 'display-p3'（変換前の画像データの色空間）
    */
-  function createTransform(profile, source) {
+  function createTransform(profile, source, opts) {
+    const whiteMatch = !opts || opts.whiteMatch !== false;   // 既定: 白点を合わせる
     const toXyz = sourceToXyzD50(source);
-    const m = mul3(inv3(profile.matrix), toXyz); // 画像の線形RGB → モニターの線形RGB
+    let toMonXyz = toXyz;
+    if (whiteMatch) {
+      // 相対的色域を維持: 画像の白(D50)を、モニターの白(三原色の合計)へ移す
+      const W = [
+        profile.matrix[0] + profile.matrix[1] + profile.matrix[2],
+        profile.matrix[3] + profile.matrix[4] + profile.matrix[5],
+        profile.matrix[6] + profile.matrix[7] + profile.matrix[8],
+      ];
+      const k = [W[0] / D50[0], W[1] / D50[1], W[2] / D50[2]];
+      toMonXyz = mul3([k[0], 0, 0, 0, k[1], 0, 0, 0, k[2]], toXyz);
+    }
+    const m = mul3(inv3(profile.matrix), toMonXyz); // 画像の線形RGB → モニターの線形RGB
 
     const lin = new Float32Array(256);
     for (let i = 0; i < 256; i++) lin[i] = srgbToLinear(i / 255);
@@ -246,6 +268,7 @@
     const encG = buildEncodeTable(profile.curves.g);
     const encB = buildEncodeTable(profile.curves.b);
     const K = ENC_SIZE - 1;
+    const dither = !!(opts && opts.dither);   // 8bitに丸める前に微小なノイズを足し、階調の段差を目立たなくする（Photoshopの「ディザを使用」と同じ考え方）
 
     /** RGBA(8bit) の配列を変換して dst に書く。src と dst は同じ配列でもよい。 */
     function apply(src, dst, start = 0, end = src.length) {
@@ -258,9 +281,19 @@
         R = R < 0 ? 0 : R > 1 ? 1 : R;
         G = G < 0 ? 0 : G > 1 ? 1 : G;
         B = B < 0 ? 0 : B > 1 ? 1 : B;
-        dst[i] = encR[(R * K + 0.5) | 0];
-        dst[i + 1] = encG[(G * K + 0.5) | 0];
-        dst[i + 2] = encB[(B * K + 0.5) | 0];
+        let oR = encR[(R * K + 0.5) | 0], oG = encG[(G * K + 0.5) | 0], oB = encB[(B * K + 0.5) | 0];   // 65536段の表で十分細かい
+        if (dither) {
+          // 位置ごとに決まる疑似乱数(0〜1未満)。同じ写真なら毎回同じ結果になる
+          let h = Math.imul((i >> 2) + 0x9e3779b9, 0x85ebca6b);
+          h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+          const n1 = (h & 1023) / 1024, n2 = ((h >>> 10) & 1023) / 1024, n3 = ((h >>> 20) & 1023) / 1024;
+          oR = Math.floor(oR + n1); oG = Math.floor(oG + n2); oB = Math.floor(oB + n3);
+        } else {
+          oR = Math.floor(oR + 0.5); oG = Math.floor(oG + 0.5); oB = Math.floor(oB + 0.5);
+        }
+        dst[i] = oR > 255 ? 255 : oR;
+        dst[i + 1] = oG > 255 ? 255 : oG;
+        dst[i + 2] = oB > 255 ? 255 : oB;
         dst[i + 3] = src[i + 3];
       }
     }
@@ -268,5 +301,17 @@
     return { apply, matrix: m };
   }
 
-  return { parseProfile, createTransform, sourceToXyzD50, rgbToXyzMatrix, adaptMatrix, mul3, inv3, D50, D65 };
+  /** 画像の白(255,255,255)が、このモニターのプロファイルでは何の値になるか（診断用） */
+  function whiteReport(profile, source) {
+    const out = {};
+    [['matched', true], ['plain', false]].forEach(([key, wm]) => {
+      const t = createTransform(profile, source || 'srgb', { whiteMatch: wm });
+      const px = new Uint8ClampedArray([255, 255, 255, 255]);
+      t.apply(px, px);
+      out[key] = [px[0], px[1], px[2]];
+    });
+    return out;
+  }
+
+  return { parseProfile, createTransform, whiteReport, sourceToXyzD50, rgbToXyzMatrix, adaptMatrix, mul3, inv3, D50, D65 };
 });

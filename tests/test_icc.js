@@ -116,6 +116,37 @@ assert.throws(() => ICC.parseProfile(new Uint8Array(200)), /ICCプロファイ�
 assert.throws(() => ICC.parseProfile(makeProfile({ matrix: sRGB_D50, curve: srgbCurve, omit: ['rXYZ', 'gXYZ', 'bXYZ'] })), /LUT型のため未対応/);
 assert.throws(() => ICC.parseProfile(makeProfile({ matrix: sRGB_D50, curve: srgbCurve, colorSpace: 'GRAY' })), /RGB用/);
 
+// ---- 11) 白点合わせ: 原色の合計がD50でないプロファイルでも、画像の白がモニターの白(255)になる
+const odd = sRGB_D50.slice(); odd[0] *= 0.97; odd[3] *= 0.97; odd[6] *= 0.97; // 赤原色を暗くして合計をD50から外す
+const oddProf = ICC.parseProfile(makeProfile({ matrix: odd, curve: srgbCurve }));
+const wOn = run(ICC.createTransform(oddProf, 'srgb'), [255, 255, 255]).slice(0, 3);
+assert.deepStrictEqual(wOn, [255, 255, 255], '白合わせ: 白が255,255,255');
+const wOff = run(ICC.createTransform(oddProf, 'srgb', { whiteMatch: false }), [255, 255, 255]);
+assert.ok(wOff[0] > 255 - 1 || wOff[1] < 255, '白合わせなしでは白がずれうる');
+const rep = ICC.whiteReport(oddProf, 'srgb');
+assert.deepStrictEqual(rep.matched, [255, 255, 255]);
+// 合計がD50のプロファイルでは、白合わせの有無で結果が同じ
+const same = [[10, 200, 90], [255, 255, 255], [128, 128, 128]];
+same.forEach((c) => assert.deepStrictEqual(run(ICC.createTransform(profSrgb, 'srgb'), c), run(ICC.createTransform(profSrgb, 'srgb', { whiteMatch: false }), c)));
+// 診断情報
+assert.ok(Array.isArray(profSrgb.info.tags) && profSrgb.info.tags.includes('rXYZ'));
+assert.strictEqual(profSrgb.info.hasLut, false);
+assert.strictEqual(profSrgb.info.whiteXYZ.length, 3);
+
+// ---- 12) ディザ: 平均は変わらず、段差(同じ値の連続)が崩れる。白と黒は動かない
+const tD = ICC.createTransform(profSrgb, 'srgb', { dither: true });
+const tN = ICC.createTransform(profSrgb, 'srgb');
+const flat = new Uint8ClampedArray(4 * 20000); for (let i = 0; i < flat.length; i += 4) { flat[i] = flat[i + 1] = flat[i + 2] = 250; flat[i + 3] = 255; }
+const fN = new Uint8ClampedArray(flat), fD = new Uint8ClampedArray(flat);
+tN.apply(flat, fN); tD.apply(flat, fD);
+let sN = 0, sD = 0, vals = new Set(); for (let i = 0; i < flat.length; i += 4) { sN += fN[i]; sD += fD[i]; vals.add(fD[i]); }
+assert.ok(Math.abs(sN - sD) / 20000 < 0.6, 'ディザで平均が大きく動かない');
+assert.ok(vals.size <= 2, 'ディザの揺れは最大1段階');
+assert.deepStrictEqual(run(tD, [255, 255, 255]).slice(0, 3), [255, 255, 255]);
+assert.deepStrictEqual(run(tD, [0, 0, 0]).slice(0, 3), [0, 0, 0]);
+// 同じ入力なら毎回同じ結果
+const fD2 = new Uint8ClampedArray(flat); tD.apply(flat, fD2); assert.deepStrictEqual(fD, fD2);
+
 // ---- 10) 性能の目安: 3メガピクセルの変換にかかる時間
 const px = 3_000_000; const big = new Uint8ClampedArray(px * 4); for (let i = 0; i < big.length; i++) big[i] = (i * 31) & 255;
 const t0 = process.hrtime.bigint(); tWide.apply(big, big); const ms = Number(process.hrtime.bigint() - t0) / 1e6;
