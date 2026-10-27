@@ -16,12 +16,18 @@
   <script src="vendor/exif.js"></script>
   <script src="icc.js"></script>
   <script src="adjust.js"></script>
+  <script src="sharpen.js"></script>
   <script src="display.js"></script>
   <script src="foldertree.js"></script>
   <style>
+    /* Enterキーで切り替える「2画面だけの大画面表示」: ヘッダー・両サイドバー・ツールバーを隠す */
+    body.focus-mode > header,
+    body.focus-mode main > aside,
+    body.focus-mode #viewerToolbar { display: none !important; }
     .canvas-container {
       cursor: crosshair;
       user-select: none;
+      overflow: hidden;   /* 送りアニメーションで、隣の画面にはみ出さないように */
     }
     .custom-scrollbar::-webkit-scrollbar {
       width: 6px;
@@ -156,6 +162,17 @@
           <option value="fade">フェード</option>
           <option value="none">なし</option>
         </select>
+        <select id="speedSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="送りの動きの速さ（ゆっくりにすると、動きがつながって滑らかに見えます）">
+          <option value="300">速い</option>
+          <option value="380" selected>標準</option>
+          <option value="450">ゆっくり</option>
+        </select>
+        <span class="text-gray-400 text-[11px]">画質:</span>
+        <select id="sharpSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="画面に合わせて写真を縮めるときの画質。「きれい」「くっきり」は、段階的に縮めて弱いシャープをかけます（表示だけ。元の写真は変わりません）。大きな写真に飛ぶときは、少し時間がかかります">
+          <option value="off">速い</option>
+          <option value="weak" selected>きれい</option>
+          <option value="normal">くっきり</option>
+        </select>
       </div>
     </div>
   </header>
@@ -239,14 +256,14 @@
       <!-- 操作説明 -->
       <div class="p-2 bg-gray-950 border-t border-gray-800 text-[10px] text-gray-400 space-y-0.5 shrink-0">
         <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">0~5</kbd> 星評価 | <kbd class="bg-gray-800 px-1 rounded text-gray-200">P</kbd> Pick | <kbd class="bg-gray-800 px-1 rounded text-gray-200">X</kbd> Reject | <kbd class="bg-gray-800 px-1 rounded text-gray-200">U</kbd> 解除</p>
-        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">←/→</kbd> スクロール | <kbd class="bg-gray-800 px-1 rounded text-gray-200">L</kbd> ロック | <kbd class="bg-gray-800 px-1 rounded text-gray-200">F10</kbd> 書き出し</p>
+        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">←/→</kbd> スクロール | <kbd class="bg-gray-800 px-1 rounded text-gray-200">L</kbd> ロック | <kbd class="bg-gray-800 px-1 rounded text-gray-200">F10</kbd> 書き出し | <kbd class="bg-gray-800 px-1 rounded text-gray-200">Enter</kbd> 大画面</p>
       </div>
     </aside>
 
     <!-- 中央：2画面ビューア -->
     <section class="flex-1 flex flex-col bg-gray-950 relative overflow-hidden">
       <!-- ツールバー -->
-      <div class="bg-gray-900/80 backdrop-blur px-4 py-1.5 border-b border-gray-800 flex justify-between items-center text-xs z-10">
+      <div id="viewerToolbar" class="bg-gray-900/80 backdrop-blur px-4 py-1.5 border-b border-gray-800 flex justify-between items-center text-xs z-10">
         <div class="flex items-center space-x-4">
           <span class="flex items-center space-x-1.5 text-blue-400 font-medium">
             <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
@@ -729,6 +746,18 @@
       Display.onResize();
     }
 
+    // 2画面だけの大画面表示 ⇄ 通常表示
+    function setFocusMode(on) {
+      const body = document.body;
+      if (body.classList.contains('focus-mode') === on) return;
+      body.classList.toggle('focus-mode', on);
+      // デスクトップ版では、ウィンドウのフルスクリーンも連動させる（タイトルバー・タスクバーを隠す）
+      if (IS_NATIVE && window.nativeApp.setFullScreen) window.nativeApp.setFullScreen(on).catch(() => {});
+      // レイアウトが変わったあとの大きさに、キャンバスを合わせ直す
+      requestAnimationFrame(() => requestAnimationFrame(handleResize));
+      if (on) toast('大画面表示（フルスクリーン）：Enter または Esc で戻ります', 2500);
+    }
+
     function anyModalOpen() {
       return ['folderModal', 'gridModal', 'exportModal', 'profileModal'].some((id) => !document.getElementById(id).classList.contains('hidden'));
     }
@@ -854,18 +883,44 @@
         lsSet('pci.transition', transitionSelect.value);
       });
 
+      const sharpSelect = document.getElementById('sharpSelect');
+      sharpSelect.addEventListener('change', () => {
+        sharpSelect.blur();
+        Display.setSharpness(sharpSelect.value);
+        lsSet('pci.sharp', sharpSelect.value);
+        Display.rebuildAll();
+      });
+
+      const speedSelect = document.getElementById('speedSelect');
+      speedSelect.addEventListener('change', () => {
+        speedSelect.blur();
+        Display.setTransitionSpeed(parseInt(speedSelect.value, 10));
+        lsSet('pci.speed', speedSelect.value);
+      });
+
       histModeSelect.addEventListener('change', () => {
         histModeSelect.blur();
         renderHistogram();
       });
 
       window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { closeAllModals(); return; }
+        if (e.key === 'Escape') {
+          if (anyModalOpen()) closeAllModals();
+          else if (document.body.classList.contains('focus-mode')) setFocusMode(false);
+          return;
+        }
         if (anyModalOpen()) return;
 
         // 「保存フォルダ名」の入力中は、文字入力をショートカットとして扱わない
         const tag = e.target && e.target.tagName;
         if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'F10') return;
+
+        // Enter: 2画面だけの大画面表示と通常表示を行き来する（ボタンに残ったフォーカスで、ボタンが押されないようにする）
+        if (e.key === 'Enter' && !e.ctrlKey && !e.altKey && !e.metaKey && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          setFocusMode(!document.body.classList.contains('focus-mode'));
+          return;
+        }
 
         if (state.currentFiles.length === 0) return;
 
@@ -1997,12 +2052,26 @@
       const saved = lsGet('pci.transition');
       if (saved && ['slide', 'fade', 'none'].includes(saved)) sel.value = saved;
       Display.setTransitionStyle(sel.value);
+      const sp = document.getElementById('speedSelect');
+      const savedSpeed = lsGet('pci.speed');
+      if (savedSpeed && ['300', '380', '450'].includes(savedSpeed)) sp.value = savedSpeed;
+      Display.setTransitionSpeed(parseInt(sp.value, 10));
+      const sh = document.getElementById('sharpSelect');
+      const savedSharp = lsGet('pci.sharp');
+      if (savedSharp && ['off', 'weak', 'normal'].includes(savedSharp)) sh.value = savedSharp;
+      Display.setSharpness(sh.value);
     }
 
     // ---- 起動時の準備
     function startNative() {
       setupProfileModal();
       updateProfileButton();
+      // フルスクリーンがウィンドウ側の操作で解除されたら、大画面表示も通常に戻す
+      if (window.nativeApp.onFullScreenChange) {
+        window.nativeApp.onFullScreenChange((on) => {
+          if (!on && document.body.classList.contains('focus-mode')) setFocusMode(false);
+        });
+      }
 
       const refreshBtn = document.getElementById('refreshTreeBtn');
       refreshBtn.classList.remove('hidden');

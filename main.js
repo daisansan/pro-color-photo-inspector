@@ -32,6 +32,15 @@ if (settings.monitorProfilePath && fs.existsSync(settings.monitorProfilePath)) {
   app.commandLine.appendSwitch('force-color-profile', 'srgb');
 }
 
+// ---- 描画をなるべくGPUに任せる（送りアニメーションを滑らかにする）
+// GPUの利用を、グラフィックスドライバーの古さなどで控えめにされている環境でも、使えるようにする。
+// テスト実行時(PCI_E2E)は、GPUのない環境で動かすので指定しない。
+if (!process.env.PCI_E2E) {
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
+
 const COLOR_DIR = path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'spool', 'drivers', 'color');
 const PROFILE_EXTS = new Set(['.icc', '.icm']);
 
@@ -174,6 +183,13 @@ function createWindow() {
     mainWindow = null;
   });
 
+  // フルスクリーンが(Windows側の操作などで)解除されたら、画面側の大画面表示も戻す
+  const notifyFullScreen = (on) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('window:fullscreen', on);
+  };
+  mainWindow.on('enter-full-screen', () => notifyFullScreen(true));
+  mainWindow.on('leave-full-screen', () => notifyFullScreen(false));
+
   // 画像ファイルをウィンドウへドロップしても、ページ遷移しないようにする
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -213,6 +229,12 @@ function handle(channel, fn) {
     return fn(...args);
   });
 }
+
+// --- 大画面表示に合わせて、ウィンドウをフルスクリーンにする/戻す（タイトルバーとタスクバーを隠す）
+handle('window:set-fullscreen', async (on) => {
+  if (mainWindow) mainWindow.setFullScreen(!!on);
+  return mainWindow ? mainWindow.isFullScreen() : false;
+});
 
 // --- 選別した写真の書き出し: 保存先フォルダを選び、その中にサブフォルダを作ってコピーする
 handle('export-picked', async (payload) => {

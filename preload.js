@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld('nativeApp', {
     }
   },
 
+  // ウィンドウのフルスクリーン（大画面表示に連動）
+  setFullScreen: (on) => call('window:set-fullscreen', !!on),
+  onFullScreenChange: (cb) => {
+    if (typeof cb !== 'function') return;
+    ipcRenderer.on('window:fullscreen', (_event, on) => cb(!!on));
+  },
+
   // 選別した写真をフォルダへ書き出す（保存先はダイアログで選ぶ）
   exportPicked: (filePaths, subFolderName) => call('export-picked', { filePaths, subFolderName }),
 

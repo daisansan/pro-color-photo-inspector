@@ -7,6 +7,7 @@
  *  4. 段階表示                   … 本画像がまだ出来ていないときは、縮小サムネイルで即座に切り替え、あとで差し替える
  *  5. 送りアニメーション         … 左右の送りをスライド/フェードで滑らかに見せる（連打時は短く、または省略）
  *  6. モニタープロファイル(ICC)  … 表示用サーフェスを作るときに、画素をモニターの色へ変換する
+ *  8. 縮小の画質                 … 「速い」は一気に縮める。「きれい」「くっきり」は、半分ずつ段階的に縮めてから、弱い/標準のシャープをかける
  *  7. 表示補正                   … 明るさ・コントラストなどを、画面に出す直前の絵にだけかける（元の写真は変えない）
  *
  * index.html のインラインスクリプトと同じグローバル(state など)を参照します。
@@ -31,9 +32,11 @@ const Display = (() => {
   const transforms = {};       // ICC: 画像の色空間ごとの変換器
   let profileId = 0;
   let style = 'slide';         // 'slide' | 'fade' | 'none'
+  let sharpLevel = 'weak';     // 'off' | 'weak' | 'normal' … 縮小後に足すシャープの強さ
+  const SHARP_AMOUNT = { off: 0, weak: 0.35, normal: 0.7 };
+  let speedMs = 380;           // スライドの所要時間(ミリ秒)。フェードなどは、この比率で伸び縮みする
   let lastNav = 0;
   let rebuildTimer = 0;
-  let rafId = 0;
   let zoomRaf = 0;
 
   // 表示補正: params が全部0か enabled=false のときは何もしない。ver は変更のたびに増える
@@ -185,7 +188,21 @@ const Display = (() => {
 
   // ------------------------------------------------------------ 表示用サーフェス
   function sigFor(w, h) {
-    return `${w}x${h}|${panelCS()}|${profileId}`;
+    return `${w}x${h}|${panelCS()}|${profileId}|${sharpLevel}`;
+  }
+
+  // 大きな絵を小さくするとき、一度に縮めずに半分ずつ縮める（一気に縮めるより細部が残る）
+  function stepDown(source, sw, sh, tw, th, cs) {
+    let cur = source, cw = sw, ch = sh;
+    while (cw > tw * 2 || ch > th * 2) {
+      const nw = Math.max(tw, Math.ceil(cw / 2)), nh = Math.max(th, Math.ceil(ch / 2));
+      const { c, ctx } = makeCanvas(nw, nh, cs, false);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+      cur = c; cw = nw; ch = nh;
+    }
+    return { img: cur, w: cw, h: ch };
   }
 
   function transformFor(source) {
@@ -195,6 +212,7 @@ const Display = (() => {
   }
 
   // 画面サイズぴったりの絵を作る。ICCがあれば、ここで画素をモニターの色に変換する。
+  // entry.noSharpen は、仮表示のサムネイル用（引き伸ばした絵にはシャープをかけない）
   function buildSurface(entry, w, h) {
     const cs = panelCS();
     const out = makeCanvas(w, h, cs, false);
@@ -202,18 +220,29 @@ const Display = (() => {
     octx.fillStyle = BG;
     octx.fillRect(0, 0, w, h);
     const fit = fitRect(entry.w, entry.h, w, h);
+    const amount = entry.noSharpen ? 0 : SHARP_AMOUNT[sharpLevel] || 0;
+    // 画質「速い」(off)のときは、従来どおり一気に縮める（いちばん速い）
+    const stepped = (entry.noSharpen || sharpLevel === 'off') ? null : stepDown(entry.bitmap, entry.w, entry.h, fit.w, fit.h, profile ? 'display-p3' : cs);
+    const srcImg = stepped ? stepped.img : entry.bitmap;
+    const sw = stepped ? stepped.w : entry.w, sh = stepped ? stepped.h : entry.h;
 
     if (!profile) {
       octx.imageSmoothingEnabled = true;
       octx.imageSmoothingQuality = 'high';
-      octx.drawImage(entry.bitmap, fit.x, fit.y, fit.w, fit.h);
+      octx.drawImage(srcImg, 0, 0, sw, sh, fit.x, fit.y, fit.w, fit.h);
+      if (amount > 0 && typeof Sharpen !== 'undefined') {
+        const img = octx.getImageData(fit.x, fit.y, fit.w, fit.h);
+        Sharpen.sharpen(img.data, fit.w, fit.h, amount);
+        octx.putImageData(img, fit.x, fit.y);
+      }
     } else {
       const work = makeCanvas(fit.w, fit.h, 'display-p3', true);
       const src = ctxColorSpace(work.ctx);
       work.ctx.imageSmoothingEnabled = true;
       work.ctx.imageSmoothingQuality = 'high';
-      work.ctx.drawImage(entry.bitmap, 0, 0, fit.w, fit.h);
+      work.ctx.drawImage(srcImg, 0, 0, sw, sh, 0, 0, fit.w, fit.h);
       const img = work.ctx.getImageData(0, 0, fit.w, fit.h, { colorSpace: src });
+      if (amount > 0 && typeof Sharpen !== 'undefined') Sharpen.sharpen(img.data, fit.w, fit.h, amount);
       transformFor(src).apply(img.data, img.data);
       octx.putImageData(new ImageData(img.data, fit.w, fit.h, { colorSpace: 'srgb' }), fit.x, fit.y);
     }
@@ -249,7 +278,7 @@ const Display = (() => {
       if (!res.ok) return null;
       const bmp = await createImageBitmap(await res.blob(), { imageOrientation: 'from-image' });
       const { w, h } = surfaceDims();
-      const s = buildSurface({ bitmap: bmp, w: bmp.width, h: bmp.height }, w, h);
+      const s = buildSurface({ bitmap: bmp, w: bmp.width, h: bmp.height, noSharpen: true }, w, h);
       bmp.close();
       return s;
     } catch (e) {
@@ -327,15 +356,18 @@ const Display = (() => {
   function paintZoom(p) {
     const entry = p.file ? entries.get(p.file) : null;
     if (!entry || !p.ctx) { paintStatic(p); return; }
-    const dpr = window.devicePixelRatio || 1;
     const W = p.canvas.width, H = p.canvas.height;
-    const drawW = entry.w * dpr, drawH = entry.h * dpr;
-    const offX = W / 2 - state.zoomPoint.x * drawW;
-    const offY = H / 2 - state.zoomPoint.y * drawH;
+    // 100%表示 = 写真の1画素を、画面の物理1画素にそのまま対応させる（拡大も縮小もしない）。
+    // Windowsの表示倍率(125%など)を掛けたり、小数の位置に描いたりすると、画素が混ざってぼけるので、整数の位置に等倍で描く。
+    const drawW = entry.w, drawH = entry.h;
+    const offX = Math.round(W / 2 - state.zoomPoint.x * drawW);
+    const offY = Math.round(H / 2 - state.zoomPoint.y * drawH);
 
     if (!profile) {
       paintBlank(p);
-      p.ctx.drawImage(entry.bitmap, offX, offY, drawW, drawH);
+      p.ctx.imageSmoothingEnabled = false;
+      p.ctx.drawImage(entry.bitmap, offX, offY);
+      p.ctx.imageSmoothingEnabled = true;
       adjustPanelCanvas(p);
       return;
     }
@@ -343,65 +375,109 @@ const Display = (() => {
     const src = ctxColorSpace(work.ctx);
     work.ctx.fillStyle = BG;
     work.ctx.fillRect(0, 0, W, H);
-    work.ctx.drawImage(entry.bitmap, offX, offY, drawW, drawH);
+    work.ctx.imageSmoothingEnabled = false;
+    work.ctx.drawImage(entry.bitmap, offX, offY);
     const img = work.ctx.getImageData(0, 0, W, H, { colorSpace: src });
     transformFor(src).apply(img.data, img.data);
     p.ctx.putImageData(new ImageData(img.data, W, H, { colorSpace: 'srgb' }), 0, 0);
     adjustPanelCanvas(p);
   }
 
-  function drawAnim(p, a, t) {
-    const ctx = p.ctx;
-    const W = p.canvas.width, H = p.canvas.height;
-    const e = easeOutCubic(t);
-    ctx.save();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, W, H);
-    if (a.style === 'slide') {
-      // 新しい画像が進行方向から押し出すように入ってくる
-      ctx.globalAlpha = 1 - 0.55 * e;
-      ctx.drawImage(shownCanvas(a.from), Math.round(-a.dir * W * e), 0);
-      ctx.globalAlpha = 0.55 + 0.45 * e;
-      ctx.drawImage(shownCanvas(a.to), Math.round(a.dir * W * (1 - e)), 0);
-    } else {
-      ctx.drawImage(shownCanvas(a.from), 0, 0);
-      ctx.globalAlpha = e;
-      ctx.drawImage(shownCanvas(a.to), 0, 0);
+  // ------------------------------------------------------------ 送りアニメーション
+  // 動かす2枚の絵を専用のキャンバス(レイヤー)に1回だけ描き、あとは位置と透明度の変化をブラウザに任せる。
+  // 位置・透明度の動きはGPU側(コンポジター)で進むので、メインスレッドが忙しくても止まらず滑らかに動く。
+  function ensureLayers(p) {
+    const cs = panelCS();
+    const parent = p.canvas && p.canvas.parentNode;
+    if (!parent) return null;
+    if (p.layers && p.layers.cs !== cs) { p.layers.from.remove(); p.layers.to.remove(); p.layers = null; }
+    if (!p.layers) {
+      const mk = (z) => {
+        const c = document.createElement('canvas');
+        c.style.cssText = `position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;display:none;z-index:${z};will-change:transform,opacity;`;
+        parent.appendChild(c);
+        return c;
+      };
+      p.layers = { from: mk(1), to: mk(2), cs, ctxFrom: null, ctxTo: null };
+      try { p.layers.ctxFrom = p.layers.from.getContext('2d', { colorSpace: cs }); } catch (e) { p.layers.ctxFrom = p.layers.from.getContext('2d'); }
+      try { p.layers.ctxTo = p.layers.to.getContext('2d', { colorSpace: cs }); } catch (e) { p.layers.ctxTo = p.layers.to.getContext('2d'); }
     }
-    ctx.restore();
+    const L = p.layers;
+    [L.from, L.to].forEach((c) => {
+      if (c.width !== p.canvas.width || c.height !== p.canvas.height) { c.width = p.canvas.width; c.height = p.canvas.height; }
+    });
+    return L;
   }
 
-  function tick(now) {
-    rafId = 0;
-    let more = false;
-    for (const p of panelList) {
-      const a = p.anim;
-      if (!a) continue;
-      const t = Math.max(0, Math.min(1, (now - a.t0) / a.dur));
-      if (t >= 1) {
-        p.surf = a.to;
-        p.anim = null;
-        if (state.isZoomed) paintZoom(p); else paintStatic(p);
-      } else {
-        drawAnim(p, a, t);
-        more = true;
-      }
-    }
-    if (more) rafId = requestAnimationFrame(tick);
+  function drawLayer(ctx, c, surf) {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (surf) ctx.drawImage(shownCanvas(surf), 0, 0);
+  }
+
+  function hideLayers(p) {
+    if (p.animHandles) { p.animHandles.forEach((h) => { try { h.cancel(); } catch (e) { /* 無視 */ } }); p.animHandles = null; }
+    if (p.layers) { p.layers.from.style.display = 'none'; p.layers.to.style.display = 'none'; }
+  }
+
+  // アニメーションを途中で打ち切る（表示は到着先の絵にする）
+  function cancelAnim(p) {
+    if (p.anim) p.surf = p.anim.to;
+    p.anim = null;
+    hideLayers(p);
   }
 
   function startTransition(p, from, to, nav, fast) {
     const kind = nav.jump ? 'fade' : style;
     if (kind === 'none') { p.surf = to; paintStatic(p); return; }
-    const base = kind === 'slide' ? 240 : (nav.jump ? 150 : 170);
-    p.anim = { from, to, dir: nav.dir >= 0 ? 1 : -1, style: kind, t0: performance.now(), dur: fast ? Math.round(base * 0.45) : base };
+    const k = speedMs / 240;
+    const base = Math.round((kind === 'slide' ? 240 : (nav.jump ? 150 : 170)) * k);
+    const dur = fast ? Math.round(base * 0.45) : base;
+    const dir = nav.dir >= 0 ? 1 : -1;
+    const a = { from, to, dir, style: kind, t0: performance.now(), dur };
     p.surf = to;
-    if (!rafId) rafId = requestAnimationFrame(tick);
+
+    const L = typeof Element !== 'undefined' && Element.prototype.animate ? ensureLayers(p) : null;
+    if (!L) { p.anim = null; paintStatic(p); return; }   // アニメーションを使えない環境では、すぐ切り替える
+
+    drawLayer(L.ctxFrom, L.from, from);
+    drawLayer(L.ctxTo, L.to, to);
+    L.from.style.display = 'block';
+    L.to.style.display = 'block';
+    p.anim = a;
+
+    const ease = 'cubic-bezier(0.215, 0.61, 0.355, 1)';   // 終わりに向かってなめらかに減速（easeOutCubic）
+    const opts = { duration: dur, easing: ease, fill: 'forwards' };
+    const handles = [];
+    if (kind === 'slide') {
+      // 透明度は変えず、絵をそのまま動かす（半透明にすると、残像のように見えるため）
+      handles.push(L.from.animate([
+        { transform: 'translate3d(0,0,0)' },
+        { transform: `translate3d(${-dir * 100}%,0,0)` },
+      ], opts));
+      handles.push(L.to.animate([
+        { transform: `translate3d(${dir * 100}%,0,0)` },
+        { transform: 'translate3d(0,0,0)' },
+      ], opts));
+    } else {
+      L.from.style.opacity = '1';
+      handles.push(L.to.animate([{ opacity: 0 }, { opacity: 1 }], opts));
+    }
+    p.animHandles = handles;
+    const last = handles[handles.length - 1];
+    const done = () => {
+      if (p.anim !== a) return;            // 途中で別の切り替えに置き換わった
+      p.anim = null;
+      p.surf = a.to;
+      if (state.isZoomed) paintZoom(p); else paintStatic(p);   // 先に本体の絵を最新にしてから、レイヤーを外す
+      hideLayers(p);
+    };
+    last.onfinish = done;
+    last.oncancel = () => { /* cancelAnim / hideLayers 側で後始末済み */ };
   }
 
   function finishAnim(p) {
-    if (p.anim) { p.surf = p.anim.to; p.anim = null; }
+    if (p.anim) cancelAnim(p);
   }
 
   function setSurface(p, surf, nav, fast) {
@@ -417,7 +493,10 @@ const Display = (() => {
   }
 
   function replaceSurface(p, surf) {
-    if (p.anim) { p.anim.to = surf; p.surf = surf; }
+    if (p.anim) {
+      p.anim.to = surf; p.surf = surf;
+      if (p.layers) drawLayer(p.layers.ctxTo, p.layers.to, surf);   // 動いている最中に、本画像へ差し替え
+    }
     else { p.surf = surf; if (state.isZoomed) paintZoom(p); else paintStatic(p); }
   }
 
@@ -441,7 +520,7 @@ const Display = (() => {
       p.file = file;
       const tok = ++p.token;
 
-      if (!file) { p.anim = null; p.surf = null; paintBlank(p); continue; }
+      if (!file) { cancelAnim(p); p.surf = null; paintBlank(p); continue; }
 
       const ready = getSurfaceSync(file, w, h);
       if (ready) { setSurface(p, ready, nav, fast); continue; }
@@ -499,7 +578,7 @@ const Display = (() => {
     surfaces.clear();
     const { w, h } = surfaceDims();
     for (const p of panelList) {
-      p.anim = null;
+      cancelAnim(p);
       p.surf = null;
       if (!p.file) { paintBlank(p); continue; }
       const s = getSurfaceSync(p.file, w, h);
@@ -513,7 +592,7 @@ const Display = (() => {
   // ウィンドウの大きさが変わった: すぐ古い絵を引き伸ばして出し、少し待ってから作り直す
   function onResize() {
     for (const p of panelList) {
-      p.anim = null;
+      cancelAnim(p);
       if (p.surf && p.ctx) {
         paintBlank(p);
         p.ctx.drawImage(shownCanvas(p.surf), 0, 0, p.canvas.width, p.canvas.height);
@@ -531,6 +610,18 @@ const Display = (() => {
     Object.keys(transforms).forEach((k) => delete transforms[k]);
     profileId++;
     surfaces.clear();
+  }
+
+  // 縮小後のシャープの強さ: 'off' | 'weak' | 'normal'。変えたら、表示用の絵を作り直す
+  function setSharpness(level) {
+    const l = Object.prototype.hasOwnProperty.call(SHARP_AMOUNT, level) ? level : 'weak';
+    if (l === sharpLevel) return;
+    sharpLevel = l;
+    surfaces.clear();
+  }
+
+  function setTransitionSpeed(ms) {
+    speedMs = Math.max(120, Math.min(600, ms || 380));
   }
 
   function setTransitionStyle(s) {
@@ -551,7 +642,7 @@ const Display = (() => {
     surfaces.clear();
     protect.clear();
     totalPx = 0;
-    panelList.forEach((p) => { p.file = null; p.surf = null; p.anim = null; p.token++; paintBlank(p); });
+    panelList.forEach((p) => { cancelAnim(p); p.file = null; p.surf = null; p.token++; paintBlank(p); });
   }
 
   function getHist(key) {
@@ -568,9 +659,9 @@ const Display = (() => {
 
   return {
     attach, show, prefetch, paintAll, onResize, rebuildAll,
-    setProfile, setTransitionStyle, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
+    setProfile, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
     hasProfile: () => !!profile,
     profileName: () => (profile ? profile.name : ''),
-    _debug: { entries, surfaces, panels },
+    _debug: { entries, surfaces, panels, buildSurface, stepDown, dims: surfaceDims },
   };
 })();
