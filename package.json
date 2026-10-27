@@ -1,0 +1,48 @@
+{
+  "name": "pro-color-photo-inspector",
+  "productName": "Pro Color Photo Inspector",
+  "version": "1.0.0",
+  "description": "プロ向け写真選別 & カラーマネジメントビューア",
+  "main": "main.js",
+  "author": "Pro Color Photo Inspector",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:css": "tailwindcss -c tools/tailwind.config.js -i tools/tailwind-input.css -o src/vendor/tailwind.css --minify",
+    "dist": "npm run build:css && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0",
+    "tailwindcss": "^3.4.17"
+  },
+  "build": {
+    "appId": "com.procolorphotoinspector.app",
+    "productName": "Pro Color Photo Inspector",
+    "directories": { "output": "dist" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "src/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "portable", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "portable": { "artifactName": "ProColorPhotoInspector-portable.exe" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "artifactName": "ProColorPhotoInspector-Setup.exe"
+    }
+  }
+}

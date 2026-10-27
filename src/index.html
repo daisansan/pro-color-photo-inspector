@@ -1,0 +1,2438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pro Color Photo Inspector</title>
+
+  <!-- PWA 対応設定 -->
+  <meta name="theme-color" content="#090d16">
+  <meta name="description" content="プロ向け写真選別 & カラーマネジメントビューア">
+  <link rel="manifest" id="manifest-placeholder">
+
+  <!-- デスクトップ版: CDNを使わず、同梱したファイルを読み込みます（オフラインでも動作） -->
+  <link rel="stylesheet" href="vendor/tailwind.css">
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+  <script src="vendor/exif.js"></script>
+  <script src="icc.js"></script>
+  <script src="adjust.js"></script>
+  <script src="display.js"></script>
+  <script src="foldertree.js"></script>
+  <style>
+    .canvas-container {
+      cursor: crosshair;
+      user-select: none;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #1f2937;
+    }
+    .adj-range {
+      -webkit-appearance: none; appearance: none;
+      height: 5px; border-radius: 3px; background: #374151; outline: none; cursor: pointer;
+    }
+    .adj-range::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: #e5e7eb; border: 2px solid #0891b2;
+    }
+    .adj-range:hover::-webkit-slider-thumb { background: #fff; }
+    .active-panel-border {
+      border: 4px solid #a3e635 !important;
+      box-shadow: 0 0 15px rgba(163, 230, 53, 0.4);
+    }
+    .locked-panel-border {
+      border: 4px solid #ef4444 !important;
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+    }
+    .locked-active-panel-border {
+      border: 4px solid #ef4444 !important;
+      outline: 4px solid #a3e635 !important;
+      outline-offset: -8px !important;
+      box-shadow: 0 0 20px rgba(163, 230, 53, 0.6), inset 0 0 15px rgba(239, 68, 68, 0.6);
+    }
+    .tree-folder {
+      cursor: pointer;
+      user-select: none;
+    }
+    .tree-folder:hover {
+      background-color: rgba(55, 65, 81, 0.5);
+    }
+    .tree-folder.active-folder {
+      background-color: rgba(30, 58, 138, 0.5);
+      border-left: 3px solid #3b82f6;
+      color: #ffffff;
+    }
+    .star-rating {
+      color: #eab308;
+    }
+    /* ヘッダー: 幅が足りないときは、ボタンの文字を縦に折り返さず、段を折り返す */
+    header { flex-wrap: wrap; row-gap: 0.5rem; }
+    header > div:last-child { flex-wrap: wrap; row-gap: 0.5rem; justify-content: flex-end; }
+    header button, header label, header span, header select { white-space: nowrap; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 flex flex-col h-screen overflow-hidden font-sans">
+
+  <!-- ヘッダーバー -->
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center justify-between shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="bg-blue-600 text-white p-2 rounded-lg">
+        <i class="fa-solid fa-sliders text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base leading-tight">Pro Color Photo Inspector</h1>
+        <p class="text-xs text-gray-400">プロ向け写真選別 & カラーマネジメントビューア</p>
+      </div>
+    </div>
+
+    <!-- アクションボタン＆設定 -->
+    <div class="flex items-center space-x-3 text-xs">
+      <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-folder-open"></i>
+        <span>画像フォルダを選択</span>
+        <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" accept="image/jpeg,image/png,image/webp">
+      </label>
+
+      <!-- フォルダツリーボタン (別窓モーダル用) -->
+      <button id="openFolderModalBtn" class="bg-cyan-700 hover:bg-cyan-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-sitemap"></i>
+        <span>フォルダツリー (別窓)</span>
+      </button>
+
+      <!-- グリッド一覧ボタン (別窓モーダル用) -->
+      <button id="openGridModalBtn" class="bg-purple-700 hover:bg-purple-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-grip"></i>
+        <span>グリッド一覧 (別窓)</span>
+      </button>
+
+      <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-file-image"></i>
+        <span>画像ファイルを選択</span>
+        <input type="file" id="fileInput" multiple class="hidden" accept="image/jpeg,image/png,image/webp">
+      </label>
+
+      <button id="liveBtn" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-medium px-3 py-2 rounded-lg transition flex items-center space-x-2 shadow" title="ONにすると、表示中のフォルダに増えた最新の写真を自動で画面Aに表示します（カメラからの転送用）">
+        <span id="liveDot" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span>
+        <span id="liveText">ライブ OFF</span>
+      </button>
+
+      <div class="flex items-center space-x-1.5 bg-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-700">
+        <span class="text-gray-400 text-[11px]">保存フォルダ名:</span>
+        <input type="text" id="targetSubFolder" value="choice" class="bg-gray-900 text-amber-300 text-xs rounded border border-gray-700 px-2 py-0.5 w-24 text-center focus:outline-none focus:border-blue-500">
+      </div>
+
+      <button id="copySelectedBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow">
+        <i class="fa-solid fa-folder-plus"></i>
+        <span>選別済み写真を書き出し (F10)</span>
+      </button>
+
+      <!-- 最初からやり直す（全リセット）ボタン -->
+      <button onclick="resetAllState()" class="bg-rose-700 hover:bg-rose-600 text-white font-medium px-3.5 py-2 rounded-lg transition flex items-center space-x-2 shadow" title="すべてのフラグ・レーティング・選別状態を解除して初期状態に戻します">
+        <i class="fa-solid fa-rotate-left"></i>
+        <span>最初からやり直す</span>
+      </button>
+
+      <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700">
+        <span class="text-gray-400 text-[11px]">表示モード:</span>
+        <select id="colorProfileSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500">
+          <option value="display-p3">Display P3 (Apple / 広色域)</option>
+          <option value="srgb">sRGB (標準)</option>
+        </select>
+        <button id="openProfileModalBtn" class="hidden bg-gray-900 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded px-2 py-0.5 text-xs flex items-center space-x-1.5 max-w-[11rem]" title="モニタープロファイル(ICC)を読み込んで、正確な色味で表示します">
+          <i class="fa-solid fa-display text-cyan-400"></i>
+          <span id="profileBtnText" class="truncate">モニターICC</span>
+        </button>
+        <span class="text-gray-400 text-[11px]">送り:</span>
+        <select id="transitionSelect" class="bg-gray-900 text-gray-200 rounded border border-gray-700 px-2 py-0.5 text-xs focus:outline-none focus:border-blue-500" title="写真を左右に送るときの動き">
+          <option value="slide">スライド</option>
+          <option value="fade">フェード</option>
+          <option value="none">なし</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- メインワークスペース -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- 左サイドバー：画像一覧 & サムネイル -->
+    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
+      <!-- フォルダステータス -->
+      <div class="px-3 py-2 bg-gray-900/90 border-b border-gray-800 flex justify-between items-center text-xs shrink-0">
+        <span class="text-gray-300 font-medium">全工場: <strong id="totalCount" class="text-blue-400 font-mono">0</strong> 枚</span>
+        <span class="text-gray-300 font-medium">選別済み: <strong id="pickedCount" class="text-emerald-400 font-mono">0</strong> 枚</span>
+      </div>
+
+      <!-- ロックされた写真の専用サムネイル表示エリア -->
+      <div id="lockedThumbnailSection" class="hidden px-2.5 py-2 bg-gray-950/90 border-b border-gray-800 space-y-1 shrink-0">
+        <div class="flex justify-between items-center text-[11px] text-rose-400 font-semibold px-1">
+          <span class="flex items-center space-x-1">
+            <i class="fa-solid fa-lock text-rose-400"></i>
+            <span id="lockedPanelLabel">画面A</span> 固定中
+          </span>
+          <span class="text-[10px] text-gray-500">Lキーで解除</span>
+        </div>
+        <div id="lockedThumbContainer" class="bg-gray-900 border border-rose-500/50 rounded p-1 flex items-center space-x-2 cursor-pointer hover:bg-gray-800 transition">
+          <!-- 動的挿入 -->
+        </div>
+      </div>
+
+      <!-- 画像一覧 (サムネイル表示エリア) -->
+      <div class="flex-1 flex flex-col min-h-0 bg-gray-950/40">
+        <div class="px-3 py-1.5 bg-gray-800/60 text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center justify-between border-b border-gray-800">
+          <span class="flex items-center space-x-1.5 truncate pr-2">
+            <i class="fa-solid fa-images text-emerald-400"></i>
+            <span id="currentFolderName" class="truncate">選択フォルダ</span>
+          </span>
+          <span id="currentFolderCount" class="text-gray-400 font-mono text-[10px]">0枚</span>
+        </div>
+
+        <!-- フィルターボタンエリア（星 & フラグ） -->
+        <div class="px-2 py-1.5 bg-gray-900/90 border-b border-gray-800 flex flex-col space-y-1 text-[11px]">
+          <div class="flex justify-between items-center text-gray-400 px-1">
+            <span>フィルター: <strong id="filterStatusText" class="text-amber-300">すべて</strong></span>
+            <button onclick="setFilter('all', null)" class="text-[10px] text-blue-400 hover:underline">リセット</button>
+          </div>
+          <!-- フラグフィルターボタン -->
+          <div class="grid grid-cols-2 gap-1 pb-1 border-b border-gray-800/80">
+            <button onclick="setFlagFilter('pick')" class="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 py-1 rounded text-center border border-emerald-800 font-medium transition flex items-center justify-center space-x-1" title="Pick (P) のみ表示">
+              <i class="fa-solid fa-check"></i><span>Pick (P) のみ</span>
+            </button>
+            <button onclick="setFlagFilter('reject')" class="bg-rose-950/80 hover:bg-rose-900 text-rose-300 py-1 rounded text-center border border-rose-800 font-medium transition flex items-center justify-center space-x-1" title="Reject (X) のみ表示">
+              <i class="fa-solid fa-xmark"></i><span>Reject (X) のみ</span>
+            </button>
+          </div>
+          <!-- 星評価フィルターボタン -->
+          <div class="grid grid-cols-6 gap-1">
+            <button onclick="setStarFilter('exact', 0)" class="bg-gray-800 hover:bg-gray-700 text-gray-300 py-0.5 rounded text-center border border-gray-700" title="評価0のみ">0</button>
+            <button onclick="setStarFilter('exact', 1)" class="bg-gray-800 hover:bg-gray-700 text-amber-400 py-0.5 rounded text-center border border-gray-700" title="★1のみ">★1</button>
+            <button onclick="setStarFilter('exact', 2)" class="bg-gray-800 hover:bg-gray-700 text-amber-400 py-0.5 rounded text-center border border-gray-700" title="★2のみ">★2</button>
+            <button onclick="setStarFilter('exact', 3)" class="bg-gray-800 hover:bg-gray-700 text-amber-400 py-0.5 rounded text-center border border-gray-700" title="★3のみ">★3</button>
+            <button onclick="setStarFilter('exact', 4)" class="bg-gray-800 hover:bg-gray-700 text-amber-400 py-0.5 rounded text-center border border-gray-700" title="★4のみ">★4</button>
+            <button onclick="setStarFilter('exact', 5)" class="bg-gray-800 hover:bg-gray-700 text-amber-400 py-0.5 rounded text-center border border-gray-700" title="★5のみ">★5</button>
+          </div>
+          <div class="grid grid-cols-5 gap-1 pt-0.5">
+            <button onclick="setStarFilter('over', 1)" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 py-0.5 rounded text-center border border-gray-700 text-[10px]" title="★1以上">★1+</button>
+            <button onclick="setStarFilter('over', 2)" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 py-0.5 rounded text-center border border-gray-700 text-[10px]" title="★2以上">★2+</button>
+            <button onclick="setStarFilter('over', 3)" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 py-0.5 rounded text-center border border-gray-700 text-[10px]" title="★3以上">★3+</button>
+            <button onclick="setStarFilter('over', 4)" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 py-0.5 rounded text-center border border-gray-700 text-[10px]" title="★4以上">★4+</button>
+            <button onclick="setStarFilter('over', 5)" class="bg-gray-800 hover:bg-gray-700 text-emerald-400 py-0.5 rounded text-center border border-gray-700 text-[10px]" title="★5のみ">★5+</button>
+          </div>
+        </div>
+
+        <!-- スクロール可能な通常サムネイルリスト -->
+        <div id="fileList" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+          <div class="text-center text-xs text-gray-500 mt-6 p-2">
+            <p>フォルダを選択してください</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作説明 -->
+      <div class="p-2 bg-gray-950 border-t border-gray-800 text-[10px] text-gray-400 space-y-0.5 shrink-0">
+        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">0~5</kbd> 星評価 | <kbd class="bg-gray-800 px-1 rounded text-gray-200">P</kbd> Pick | <kbd class="bg-gray-800 px-1 rounded text-gray-200">X</kbd> Reject | <kbd class="bg-gray-800 px-1 rounded text-gray-200">U</kbd> 解除</p>
+        <p><kbd class="bg-gray-800 px-1 rounded text-gray-200">←/→</kbd> スクロール | <kbd class="bg-gray-800 px-1 rounded text-gray-200">L</kbd> ロック | <kbd class="bg-gray-800 px-1 rounded text-gray-200">F10</kbd> 書き出し</p>
+      </div>
+    </aside>
+
+    <!-- 中央：2画面ビューア -->
+    <section class="flex-1 flex flex-col bg-gray-950 relative overflow-hidden">
+      <!-- ツールバー -->
+      <div class="bg-gray-900/80 backdrop-blur px-4 py-1.5 border-b border-gray-800 flex justify-between items-center text-xs z-10">
+        <div class="flex items-center space-x-4">
+          <span class="flex items-center space-x-1.5 text-blue-400 font-medium">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+            <span>画面A</span>
+          </span>
+          <span class="flex items-center space-x-1.5 text-purple-400 font-medium">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+            <span>画面B</span>
+          </span>
+          <span id="lockStatusBadge" class="hidden bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[11px] items-center space-x-1">
+            <i class="fa-solid fa-lock"></i>
+            <span id="lockStatusText">画面A ロック中</span>
+          </span>
+        </div>
+
+        <div class="flex items-center space-x-4 text-gray-400">
+          <span id="zoomStatus" class="bg-gray-800 px-2.5 py-0.5 rounded text-amber-300 font-mono text-[11px]">クリック長押しで100%拡大</span>
+        </div>
+      </div>
+
+      <!-- 2連キャンバス -->
+      <div class="flex-1 flex divide-x divide-gray-800 relative overflow-hidden">
+        <div class="flex-1 h-full relative flex flex-col bg-black canvas-container active-panel-border" id="containerA">
+          <div class="absolute top-3 left-3 bg-gray-900/80 border border-gray-700/80 rounded px-2.5 py-1 text-xs text-gray-200 z-10 pointer-events-none backdrop-blur truncate max-w-[80%]" id="labelA">
+            画面A: 未選択
+          </div>
+          <!-- 画面Aの右下メタデータオーバーレイバッジ -->
+          <div id="overlayBadgeA" class="absolute bottom-3 right-3 bg-gray-900/85 border border-gray-700/80 rounded px-2.5 py-1 text-xs z-10 pointer-events-none backdrop-blur flex items-center space-x-2 shadow-lg hidden">
+            <span id="overlayFlagA" class="font-bold px-1 rounded text-[10px]"></span>
+            <span id="overlayStarsA" class="text-amber-400 font-bold tracking-tight text-xs"></span>
+          </div>
+          <div id="adjBadgeA" class="hidden absolute top-3 right-3 rounded px-2 py-0.5 text-[10px] font-bold z-10 pointer-events-none border"></div>
+          <canvas id="canvasA" class="w-full h-full block"></canvas>
+        </div>
+
+        <div class="flex-1 h-full relative flex flex-col bg-black canvas-container" id="containerB">
+          <div class="absolute top-3 left-3 bg-gray-900/80 border border-gray-700/80 rounded px-2.5 py-1 text-xs text-gray-200 z-10 pointer-events-none backdrop-blur truncate max-w-[80%]" id="labelB">
+            画面B: 未選択
+          </div>
+          <!-- 画面Bの右下メタデータオーバーレイバッジ -->
+          <div id="overlayBadgeB" class="absolute bottom-3 right-3 bg-gray-900/85 border border-gray-700/80 rounded px-2.5 py-1 text-xs z-10 pointer-events-none backdrop-blur flex items-center space-x-2 shadow-lg hidden">
+            <span id="overlayFlagB" class="font-bold px-1 rounded text-[10px]"></span>
+            <span id="overlayStarsB" class="text-amber-400 font-bold tracking-tight text-xs"></span>
+          </div>
+          <div id="adjBadgeB" class="hidden absolute top-3 right-3 rounded px-2 py-0.5 text-[10px] font-bold z-10 pointer-events-none border"></div>
+          <canvas id="canvasB" class="w-full h-full block"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右サイドバー：EXIF & ヒストグラム -->
+    <aside class="w-64 bg-gray-900 border-l border-gray-800 flex flex-col shrink-0 overflow-y-auto custom-scrollbar p-3 space-y-4">
+      
+      <!-- ヒストグラム表示エリア -->
+      <div class="bg-gray-950 p-2.5 rounded-lg border border-gray-800 space-y-2">
+        <div class="flex justify-between items-center text-xs font-semibold text-gray-300">
+          <span class="flex items-center space-x-1">
+            <i class="fa-solid fa-chart-simple text-blue-400"></i>
+            <span>ヒストグラム</span>
+          </span>
+          <select id="histModeSelect" class="bg-gray-800 text-[10px] text-gray-300 rounded border border-gray-700 px-1.5 py-0.5">
+            <option value="rgb">RGBカラー</option>
+            <option value="luminance">輝度 (Luminance)</option>
+          </select>
+        </div>
+        <canvas id="histCanvas" width="220" height="100" class="w-full h-24 bg-gray-900 rounded border border-gray-800/80 block"></canvas>
+      </div>
+
+      <!-- EXIFメタデータ情報表示 -->
+      <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 space-y-2.5 text-xs">
+        <div class="font-semibold text-gray-300 border-b border-gray-800 pb-1.5 flex items-center space-x-1.5">
+          <i class="fa-solid fa-camera text-emerald-400"></i>
+          <span>EXIF メタデータ</span>
+        </div>
+        <div id="exifInfo" class="space-y-1.5 text-gray-400 text-[11px]">
+          <p class="text-gray-500 italic text-center py-2">画像を選択すると撮影情報が表示されます</p>
+        </div>
+      </div>
+
+      <!-- 現在選択中画像のアクション設定 -->
+      <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 space-y-2.5 text-xs">
+        <div class="font-semibold text-gray-300 border-b border-gray-800 pb-1.5 flex items-center space-x-1.5">
+          <i class="fa-solid fa-tag text-amber-400"></i>
+          <span>フラグ & レーティング</span>
+        </div>
+        <div class="flex justify-between items-center pt-1">
+          <span class="text-gray-400">フラグ:</span>
+          <div class="space-x-1">
+            <button onclick="setFlag('pick')" class="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded hover:bg-emerald-900 text-[11px]" title="Pick (P)">P</button>
+            <button onclick="setFlag('reject')" class="px-2 py-0.5 bg-rose-950 text-rose-400 border border-rose-800 rounded hover:bg-rose-900 text-[11px]" title="Reject (X)">X</button>
+            <button onclick="setFlag(null)" class="px-2 py-0.5 bg-gray-800 text-gray-300 border border-gray-700 rounded hover:bg-gray-700 text-[11px]" title="解除 (U)">解除U</button>
+          </div>
+        </div>
+        <div class="flex justify-between items-center pt-1">
+          <span class="text-gray-400">評価 (0-5):</span>
+          <div id="ratingStars" class="star-rating space-x-0.5 text-sm cursor-pointer">
+            <i class="fa-regular fa-star" onclick="setRating(1)"></i>
+            <i class="fa-regular fa-star" onclick="setRating(2)"></i>
+            <i class="fa-regular fa-star" onclick="setRating(3)"></i>
+            <i class="fa-regular fa-star" onclick="setRating(4)"></i>
+            <i class="fa-regular fa-star" onclick="setRating(5)"></i>
+          </div>
+        </div>
+        <div class="pt-2 border-t border-gray-800">
+          <button onclick="clearAllMetadataForFolder()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 py-1.5 px-2 rounded text-xs font-medium transition flex items-center justify-center space-x-1.5 shadow" title="現在フォルダ内の全写真の評価とフラグをすべて解除">
+            <i class="fa-solid fa-rotate-left text-amber-400"></i>
+            <span>レーティング・P・Xを全部解除 (フォルダ内)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 表示補正（見た目だけ。元の写真は変わらない） -->
+      <div id="adjustCard" class="bg-gray-950 p-3 rounded-lg border border-gray-800 space-y-2 text-xs">
+        <div class="font-semibold text-gray-300 border-b border-gray-800 pb-1.5 flex items-center justify-between">
+          <span class="flex items-center space-x-1.5"><i class="fa-solid fa-sliders text-cyan-400"></i><span>表示補正</span></span>
+          <span class="text-[10px] font-normal text-gray-500">見た目だけ・2画面連動</span>
+        </div>
+        <div id="adjustRows" class="space-y-1.5"></div>
+        <div class="flex items-center gap-2 pt-1">
+          <button id="adjustToggleBtn" class="flex-1 px-2 py-1.5 rounded border text-[11px] font-semibold transition bg-cyan-700 border-cyan-500 text-white hover:bg-cyan-600" title="補正のON/OFFを切り替えて、補正前後を見比べます（キー: ¥ または \）">補正 ON <span class="opacity-70 font-normal">(\)</span></button>
+          <button id="adjustResetBtn" class="px-2.5 py-1.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-200 text-[11px]" title="すべて0に戻します">リセット</button>
+        </div>
+        <p class="text-[10px] text-gray-500 leading-snug">スライダーのダブルクリックでその項目だけ0に戻ります。ヒストグラムは補正前の写真の値です。</p>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- フォルダツリー別ウィンドウ (モーダル) -->
+  <div id="folderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-xl p-5 shadow-2xl flex flex-col space-y-4">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-sitemap text-blue-400"></i>
+          <span>フォルダ構造ビューア</span>
+        </h3>
+        <button id="closeFolderModalBtn" class="text-gray-400 hover:text-white text-base"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="flex justify-between items-center text-xs text-gray-400 px-1">
+        <span id="modalFolderCountBadge" class="font-mono text-cyan-300">0 フォルダ</span>
+        <span class="flex items-center space-x-3">
+          <span class="text-[11px]">フォルダをクリックで開く / ▶で下の階層を表示</span>
+          <button id="refreshTreeBtn" class="hidden bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 rounded px-2.5 py-1 text-xs items-center space-x-1.5 disabled:opacity-60" title="フォルダの一覧と枚数を最新の状態に更新します">
+            <i class="fa-solid fa-rotate text-emerald-400"></i>
+            <span>更新</span>
+          </button>
+        </span>
+      </div>
+
+      <!-- ツリー本体 -->
+      <div id="folderTree" class="bg-gray-950 border border-gray-800 rounded-lg p-2 h-[28rem] overflow-y-auto custom-scrollbar text-xs space-y-0.5">
+        <div class="text-center text-gray-500 mt-12 p-1 text-xs">
+          <i class="fa-solid fa-folder-tree text-2xl mb-2 text-gray-600 block"></i>
+          「画像フォルダを選択」してください
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-end">
+        <button id="closeFolderModalOkBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg transition shadow">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- グリッド一覧別ウィンドウ (モーダル) -->
+  <div id="gridModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden flex items-center justify-center z-50 p-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-5xl h-[85vh] p-6 shadow-2xl flex flex-col space-y-4">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+        <div class="flex items-center space-x-3">
+          <div class="bg-purple-600 text-white p-2 rounded-lg">
+            <i class="fa-solid fa-grip text-base"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+              <span>フォト・グリッド一覧ビューア</span>
+            </h3>
+            <p class="text-xs text-gray-400" id="gridModalSubTitle">フォルダ内の全写真一覧</p>
+          </div>
+        </div>
+        <button id="closeGridModalBtn" class="text-gray-400 hover:text-white text-lg px-2"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- グリッド表示エリア -->
+      <div id="photoGridContainer" class="flex-1 bg-gray-950 border border-gray-800 rounded-lg p-4 overflow-y-auto custom-scrollbar grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div class="col-span-full text-center text-gray-500 mt-20">
+          <i class="fa-solid fa-images text-3xl mb-2 text-gray-600 block"></i>
+          画像がありません
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-between items-center border-t border-gray-800">
+        <span class="text-xs text-gray-400" id="gridModalCountText">0 枚表示中</span>
+        <button id="closeGridModalOkBtn" class="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition shadow">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モニタープロファイル(ICC)設定 (モーダル) -->
+  <div id="profileModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-xl p-5 shadow-2xl flex flex-col space-y-3">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+        <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-display text-cyan-400"></i>
+          <span>モニタープロファイル (ICC)</span>
+        </h3>
+        <button id="closeProfileModalBtn" class="text-gray-400 hover:text-white text-base"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div id="profileCurrent" class="text-xs bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-gray-200"></div>
+
+      <p class="text-[11px] text-gray-400 leading-relaxed">
+        キャリブレーション（色の校正）で作ったモニタープロファイルを選ぶと、写真をそのモニターの色に合わせて表示します。
+        切り替えるとアプリが自動で再起動します。選別結果（星・Pick/Reject）は保存されるので、再起動しても消えません。
+      </p>
+
+      <div class="flex items-center space-x-2">
+        <button id="profileChooseBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-file-import"></i><span>ファイルを選択…</span>
+        </button>
+        <button id="profileResetBtn" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg transition">OS標準の色管理に戻す</button>
+      </div>
+
+      <div class="text-[11px] text-gray-400">このPCに入っているプロファイル（新しい順）</div>
+      <div id="profileList" class="bg-gray-950 border border-gray-800 rounded-lg p-1.5 h-44 overflow-y-auto custom-scrollbar text-xs space-y-0.5"></div>
+
+      <div id="profileDetail" class="hidden text-xs rounded-lg border px-3 py-2 leading-relaxed whitespace-pre-line break-all"></div>
+
+      <div class="pt-1 flex justify-end space-x-3">
+        <button id="closeProfileOkBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg transition">閉じる</button>
+        <button id="profileApplyBtn" disabled class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">このプロファイルを使う（再起動）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通知 -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-600 text-gray-100 text-xs px-4 py-2 rounded-lg shadow-lg z-[60] hidden max-w-xl text-center whitespace-pre-line"></div>
+
+  <!-- 書き出し確認モーダル -->
+  <div id="exportModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6 shadow-2xl flex flex-col space-y-4">
+      <div class="flex justify-between items-start">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-folder-plus text-emerald-400"></i>
+          <span>選別写真の書き出し</span>
+        </h3>
+        <button id="closeModalBtn" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="space-y-2">
+        <p class="text-xs text-gray-300">書き出す写真の条件（選んだものをすべて書き出します）</p>
+        <div id="exportCritChips" class="flex flex-wrap gap-1.5"></div>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-gray-400">
+          <span>早見:</span>
+          <button type="button" data-preset="pick" class="export-preset px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">Pickのみ</button>
+          <button type="button" data-preset="1" class="export-preset px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">★1以上</button>
+          <button type="button" data-preset="2" class="export-preset px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">★2以上</button>
+          <button type="button" data-preset="3" class="export-preset px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">★3以上</button>
+          <button type="button" data-preset="4" class="export-preset px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700">★4以上</button>
+          <label class="flex items-center space-x-1.5 text-gray-300 cursor-pointer ml-auto"><input type="checkbox" id="exportExcludeReject" class="accent-rose-500"><span>Rejectは除く</span></label>
+        </div>
+        <p id="exportCountLine" class="text-xs text-emerald-300 font-semibold"></p>
+      </div>
+
+      <div id="modalPickedList" class="bg-gray-950 border border-gray-800 rounded-lg p-3 max-h-48 overflow-y-auto text-xs font-mono space-y-1 text-gray-300">
+      </div>
+
+      <!-- 書き出し結果の表示（デスクトップ版） -->
+      <div id="exportResult" class="hidden text-xs rounded-lg border px-3 py-2 leading-relaxed break-all"></div>
+
+      <div class="pt-2 flex justify-end space-x-3">
+        <button id="cancelModalBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded-lg transition">キャンセル</button>
+        <button id="downloadZipBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition flex items-center space-x-2 shadow">
+          <i class="fa-solid fa-download"></i>
+          <span>選択写真を一括保存</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * アプリケーションの状態管理
+     */
+    const state = {
+      allFiles: [],
+      allFolderFiles: [],
+      currentFolderPath: "",
+      currentFiles: [],
+      currentIndex: 0,
+      
+      lockedPanel: null,
+      lockedIndex: 0,
+      
+      pickedFiles: new Set(),
+      metadataMap: new Map(),
+      
+      activePanel: 'A',
+      cursorPanel: 'A',   // ロックしていないとき、いま送っている写真(currentIndex)がどちらの画面にあるか。右送り→B、左送り→A
+      colorSpace: 'display-p3',
+
+      nativeMode: null,   // null: ブラウザ版 / 'folder' / 'files'
+      currentDir: '',     // デスクトップ版で開いているフォルダ
+      savedBase: {},      // フォルダごとの保存済みの選別結果（保存時の土台）
+      
+      isZoomed: false,
+      zoomPoint: { x: 0.5, y: 0.5 },
+
+      filterType: 'all', // 'all', 'star', 'flag'
+      starFilterMode: 'all',
+      starFilterValue: null,
+      flagFilterValue: null,
+      
+      ctxA: null,
+      ctxB: null,
+      histCtx: null
+    };
+
+    const folderInput = document.getElementById('folderInput');
+    const fileInput = document.getElementById('fileInput');
+    const folderTreeEl = document.getElementById('folderTree');
+    const modalFolderCountBadge = document.getElementById('modalFolderCountBadge');
+    const openFolderModalBtn = document.getElementById('openFolderModalBtn');
+    const folderModal = document.getElementById('folderModal');
+    const closeFolderModalBtn = document.getElementById('closeFolderModalBtn');
+    const closeFolderModalOkBtn = document.getElementById('closeFolderModalOkBtn');
+
+    const openGridModalBtn = document.getElementById('openGridModalBtn');
+    const gridModal = document.getElementById('gridModal');
+    const closeGridModalBtn = document.getElementById('closeGridModalBtn');
+    const closeGridModalOkBtn = document.getElementById('closeGridModalOkBtn');
+    const photoGridContainer = document.getElementById('photoGridContainer');
+    const gridModalSubTitle = document.getElementById('gridModalSubTitle');
+    const gridModalCountText = document.getElementById('gridModalCountText');
+
+    const currentFolderNameEl = document.getElementById('currentFolderName');
+    const currentFolderCountEl = document.getElementById('currentFolderCount');
+    const fileListEl = document.getElementById('fileList');
+    const containerA = document.getElementById('containerA');
+    const containerB = document.getElementById('containerB');
+    let canvasA = document.getElementById('canvasA');
+    let canvasB = document.getElementById('canvasB');
+    const labelA = document.getElementById('labelA');
+    const labelB = document.getElementById('labelB');
+    const overlayBadgeA = document.getElementById('overlayBadgeA');
+    const overlayFlagA = document.getElementById('overlayFlagA');
+    const overlayStarsA = document.getElementById('overlayStarsA');
+    const overlayBadgeB = document.getElementById('overlayBadgeB');
+    const overlayFlagB = document.getElementById('overlayFlagB');
+    const overlayStarsB = document.getElementById('overlayStarsB');
+    const colorProfileSelect = document.getElementById('colorProfileSelect');
+    const copySelectedBtn = document.getElementById('copySelectedBtn');
+    const exportModal = document.getElementById('exportModal');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const cancelModalBtn = document.getElementById('cancelModalBtn');
+    const downloadZipBtn = document.getElementById('downloadZipBtn');
+    const modalPickedList = document.getElementById('modalPickedList');
+    const zoomStatus = document.getElementById('zoomStatus');
+    const totalCountEl = document.getElementById('totalCount');
+    const pickedCountEl = document.getElementById('pickedCount');
+    const exifInfoEl = document.getElementById('exifInfo');
+    const ratingStarsEl = document.getElementById('ratingStars');
+    const histCanvas = document.getElementById('histCanvas');
+    const histModeSelect = document.getElementById('histModeSelect');
+    const lockedThumbnailSection = document.getElementById('lockedThumbnailSection');
+    const lockedThumbContainer = document.getElementById('lockedThumbContainer');
+    const lockedPanelLabel = document.getElementById('lockedPanelLabel');
+
+    // ------------------------------------------------------------ デスクトップ版の共通部品
+    const IS_NATIVE = !!(window.nativeApp && window.nativeApp.listImages);
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 保存できなくても動作する */ } }
+    const baseName = (p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
+
+    let toastTimer = 0;
+    function toast(msg, ms = 4500) {
+      const el = document.getElementById('toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
+    }
+
+    window.onload = async () => {
+      if (IS_NATIVE) await initMonitorProfile();
+      restorePrefs();
+      setupAdjustPanel();
+      initCanvases();
+      setupEventListeners();
+      window.addEventListener('resize', handleResize);
+      if (IS_NATIVE) startNative(); else registerPWA();
+    };
+
+    // PWA インストール対応 (Web App Manifest と Service Worker のインライン生成)
+    function registerPWA() {
+      // Manifest の動的挿入 (Data URL で安定読み込み)
+      const manifestObj = {
+        name: "Pro Color Photo Inspector",
+        short_name: "PhotoInspector",
+        start_url: location.href,
+        display: "standalone",
+        background_color: "#090d16",
+        theme_color: "#090d16",
+        icons: [
+          {
+            src: "https://placehold.co/192x192/1e293b/a3e635?text=Inspector",
+            sizes: "192x192",
+            type: "image/png"
+          },
+          {
+            src: "https://placehold.co/512x512/1e293b/a3e635?text=Inspector",
+            sizes: "512x512",
+            type: "image/png"
+          }
+        ]
+      };
+      const manifestStr = 'data:application/manifest+json;base64,' + btoa(unescape(encodeURIComponent(JSON.stringify(manifestObj))));
+      document.getElementById('manifest-placeholder').setAttribute('href', manifestStr);
+
+      // Service Worker の動的登録 (http / https 環境のみ)
+      if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
+        const swCode = `
+          self.addEventListener('install', (e) => {
+            self.skipWaiting();
+          });
+          self.addEventListener('activate', (e) => {
+            return self.clients.claim();
+          });
+          self.addEventListener('fetch', (e) => {
+            e.respondWith(fetch(e.request).catch(() => new Response("Offline")));
+          });
+        `;
+        const swBlob = new Blob([swCode], { type: 'text/javascript' });
+        const swURL = URL.createObjectURL(swBlob);
+        navigator.serviceWorker.register(swURL).catch(err => {
+          console.warn('ServiceWorker登録スキップ:', err);
+        });
+      }
+    }
+
+    function initCanvases() {
+      const useProfile = Display.hasProfile();
+      state.colorSpace = useProfile ? 'srgb' : (colorProfileSelect && colorProfileSelect.value === 'display-p3' ? 'display-p3' : 'srgb');
+      if (useProfile && colorProfileSelect) {
+        colorProfileSelect.disabled = true;
+        colorProfileSelect.title = 'モニタープロファイル使用中は、プロファイルの色で表示します';
+      }
+      Display.attach('A', canvasA);
+      Display.attach('B', canvasB);
+      state.histCtx = histCanvas.getContext('2d');
+      handleResize();
+    }
+
+    // 描画先のキャンバスを新しく作り直す（色空間は最初の getContext で固定されるため）
+    function recreateCanvas(canvas, panel) {
+      const fresh = document.createElement('canvas');
+      fresh.id = canvas.id;
+      fresh.className = canvas.className;
+      canvas.replaceWith(fresh);
+      attachCanvasEvents(fresh, panel);
+      return fresh;
+    }
+
+    function sizeCanvases() {
+      const dpr = window.devicePixelRatio || 1;
+      [canvasA, canvasB].forEach((c) => {
+        const r = c.parentElement.getBoundingClientRect();
+        c.width = Math.max(1, Math.round(r.width * dpr));
+        c.height = Math.max(1, Math.round(r.height * dpr));
+      });
+    }
+
+    function handleResize() {
+      sizeCanvases();
+      Display.onResize();
+    }
+
+    function anyModalOpen() {
+      return ['folderModal', 'gridModal', 'exportModal', 'profileModal'].some((id) => !document.getElementById(id).classList.contains('hidden'));
+    }
+
+    function closeAllModals() {
+      ['folderModal', 'gridModal', 'exportModal', 'profileModal'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+    }
+
+    // クリック長押しで100%等倍表示
+    function startZoom(e, canvas, panel) {
+      if (state.currentFiles.length === 0) return;
+      setActivePanel(panel);
+
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      state.isZoomed = true;
+      state.zoomPoint = {
+        x: (clientX - rect.left) / rect.width,
+        y: (clientY - rect.top) / rect.height
+      };
+      zoomStatus.textContent = "両画面 100% 等倍表示中";
+      zoomStatus.classList.replace('text-amber-300', 'text-emerald-400');
+      render();
+    }
+
+    function updateZoomPoint(e, canvas) {
+      if (!state.isZoomed) return;
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      state.zoomPoint = {
+        x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+        y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+      };
+      render();
+    }
+
+    function stopZoom() {
+      if (!state.isZoomed) return;
+      state.isZoomed = false;
+      zoomStatus.textContent = "クリック長押しで100%拡大";
+      zoomStatus.classList.replace('text-emerald-400', 'text-amber-300');
+      render();
+    }
+
+    function attachCanvasEvents(canvas, panel) {
+      canvas.addEventListener('mousedown', (e) => startZoom(e, canvas, panel));
+      canvas.addEventListener('mousemove', (e) => { if (e.buttons === 1) updateZoomPoint(e, canvas); });
+      canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startZoom(e, canvas, panel); }, { passive: false });
+      canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateZoomPoint(e, canvas); }, { passive: false });
+    }
+
+    function setupEventListeners() {
+      // ブラウザ版: <input> で選ばれた File を使う
+      const handleFileSelect = (files) => {
+        const validFiles = Array.from(files).filter(file => {
+          const type = file.type.toLowerCase();
+          const name = file.name.toLowerCase();
+          return type.startsWith('image/') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp');
+        });
+
+        if (validFiles.length === 0) return;
+
+        Display.reset();
+        state.nativeMode = null;
+        state.allFiles = validFiles;
+        state.pickedFiles.clear();
+        state.metadataMap.clear();
+
+        validFiles.forEach(f => state.metadataMap.set(f, { rating: 0, flag: null }));
+
+        buildFolderTree(validFiles);
+        if (totalCountEl) totalCountEl.textContent = validFiles.length;
+        if (pickedCountEl) pickedCountEl.textContent = 0;
+      };
+
+      if (IS_NATIVE) {
+        // デスクトップ版: OSのダイアログで選ぶ（ファイルの場所が分かるので、縮小サムネイルや選別結果の保存ができる）
+        folderInput.addEventListener('click', (e) => { e.preventDefault(); chooseFolderNative(); });
+        fileInput.addEventListener('click', (e) => { e.preventDefault(); chooseFilesNative(); });
+      } else {
+        folderInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
+        if (fileInput) fileInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
+      }
+
+      openFolderModalBtn.addEventListener('click', () => {
+        folderModal.classList.remove('hidden');
+        if (IS_NATIVE) FolderTree.open();
+      });
+      closeFolderModalBtn.addEventListener('click', () => folderModal.classList.add('hidden'));
+      closeFolderModalOkBtn.addEventListener('click', () => folderModal.classList.add('hidden'));
+
+      openGridModalBtn.addEventListener('click', () => {
+        openGridModal();
+        gridModal.classList.remove('hidden');
+      });
+      closeGridModalBtn.addEventListener('click', () => gridModal.classList.add('hidden'));
+      closeGridModalOkBtn.addEventListener('click', () => gridModal.classList.add('hidden'));
+
+      if (colorProfileSelect) {
+        colorProfileSelect.addEventListener('change', () => {
+          colorProfileSelect.blur();
+          if (Display.hasProfile()) return;
+          state.colorSpace = colorProfileSelect.value === 'display-p3' ? 'display-p3' : 'srgb';
+          canvasA = recreateCanvas(canvasA, 'A');
+          canvasB = recreateCanvas(canvasB, 'B');
+          Display.attach('A', canvasA);
+          Display.attach('B', canvasB);
+          sizeCanvases();
+          Display.colorSpaceChanged();
+          Display.rebuildAll();
+          renderHistogram();
+        });
+      }
+
+      const transitionSelect = document.getElementById('transitionSelect');
+      transitionSelect.addEventListener('change', () => {
+        transitionSelect.blur();
+        Display.setTransitionStyle(transitionSelect.value);
+        lsSet('pci.transition', transitionSelect.value);
+      });
+
+      histModeSelect.addEventListener('change', () => {
+        histModeSelect.blur();
+        renderHistogram();
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { closeAllModals(); return; }
+        if (anyModalOpen()) return;
+
+        // 「保存フォルダ名」の入力中は、文字入力をショートカットとして扱わない
+        const tag = e.target && e.target.tagName;
+        if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'F10') return;
+
+        if (state.currentFiles.length === 0) return;
+
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          nextImage();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prevImage();
+        } else if (e.key === 'F10') {
+          e.preventDefault();
+          togglePickTargetImage();
+        } else if (['0','1','2','3','4','5'].includes(e.key)) {
+          setRating(parseInt(e.key));
+        } else if (e.key.toLowerCase() === 'p') {
+          setFlag('pick');
+        } else if (e.key.toLowerCase() === 'x') {
+          setFlag('reject');
+        } else if (e.key.toLowerCase() === 'u') {
+          setFlag(null);
+        } else if (e.key.toLowerCase() === 'l') {
+          toggleLockActivePanel();
+        } else if (e.key === '\\' || e.key === '¥' || e.code === 'IntlYen' || e.code === 'IntlRo' || e.code === 'Backslash') {
+          e.preventDefault();
+          toggleAdjust();
+        }
+      });
+
+      attachCanvasEvents(canvasA, 'A');
+      attachCanvasEvents(canvasB, 'B');
+
+      window.addEventListener('mouseup', stopZoom);
+      window.addEventListener('touchend', stopZoom);
+
+      containerA.addEventListener('click', () => setActivePanel('A'));
+      containerB.addEventListener('click', () => setActivePanel('B'));
+
+      copySelectedBtn.addEventListener('click', openExportModal);
+      closeModalBtn.addEventListener('click', () => exportModal.classList.add('hidden'));
+      cancelModalBtn.addEventListener('click', () => exportModal.classList.add('hidden'));
+      downloadZipBtn.addEventListener('click', downloadPickedImages);
+    }
+
+    function buildFolderTree(files) {
+      const folderMap = new Map();
+
+      files.forEach(file => {
+        const relPath = file.webkitRelativePath || file.name;
+        const parts = relPath.split('/');
+        const folderPath = parts.length > 1 ? parts.slice(0, -1).join('/') : 'ルート';
+        
+        if (!folderMap.has(folderPath)) {
+          folderMap.set(folderPath, []);
+        }
+        folderMap.get(folderPath).push(file);
+      });
+
+      modalFolderCountBadge.textContent = `${folderMap.size} フォルダ`;
+      renderFolderTreeHTML(folderMap);
+
+      const firstFolderPath = Array.from(folderMap.keys())[0] || '';
+      selectFolderByPath(firstFolderPath, folderMap.get(firstFolderPath));
+    }
+
+    function renderFolderTreeHTML(folderMap) {
+      folderTreeEl.innerHTML = '';
+      const sortedPaths = Array.from(folderMap.keys()).sort();
+
+      sortedPaths.forEach(path => {
+        const files = folderMap.get(path);
+        const item = document.createElement('div');
+        const depth = (path.match(/\//g) || []).length;
+
+        item.className = `tree-folder px-2 py-1.5 rounded flex items-center justify-between transition text-gray-300 ${
+          path === state.currentFolderPath ? 'active-folder' : ''
+        }`;
+        item.style.paddingLeft = `${Math.max(0.5, depth * 0.5 + 0.5)}rem`;
+
+        const folderName = path.split('/').pop() || path;
+
+        item.innerHTML = `
+          <div class="flex items-center space-x-1.5 truncate pr-1">
+            <i class="fa-solid fa-folder${path === state.currentFolderPath ? '-open text-amber-400' : ' text-amber-500/80'}"></i>
+            <span class="truncate text-xs">${folderName}</span>
+          </div>
+          <span class="bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0">${files.length}</span>
+        `;
+
+        item.onclick = () => {
+          selectFolderByPath(path, files);
+          folderModal.classList.add('hidden');
+        };
+        folderTreeEl.appendChild(item);
+      });
+    }
+
+    function selectFolderByPath(path, files = null) {
+      state.currentFolderPath = path;
+
+      if (!files) {
+        files = state.allFiles.filter(file => {
+          const relPath = file.webkitRelativePath || file.name;
+          const folderPath = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : 'ルート';
+          return folderPath === path;
+        });
+      }
+
+      state.allFolderFiles = Array.from(files).sort((a, b) => 
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      );
+      
+      applyFilter();
+      state.currentIndex = 0;
+      state.cursorPanel = 'A';
+      state.lockedPanel = null;
+
+      currentFolderNameEl.textContent = baseName(path) || path;
+      loadAndRender();
+    }
+
+    function openGridModal() {
+      photoGridContainer.innerHTML = '';
+      const filesToDisplay = state.currentFiles || [];
+      gridModalSubTitle.textContent = `フォルダ: ${state.currentFolderPath || 'ルート'} (${filesToDisplay.length}枚)`;
+      gridModalCountText.textContent = `${filesToDisplay.length} 枚表示中`;
+
+      if (filesToDisplay.length === 0) {
+        photoGridContainer.innerHTML = `
+          <div class="col-span-full text-center text-gray-500 mt-20">
+            <i class="fa-solid fa-images text-3xl mb-2 text-gray-600 block"></i>
+            画像がありません
+          </div>
+        `;
+        return;
+      }
+
+      filesToDisplay.forEach((file, index) => {
+        const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+        const isPicked = state.pickedFiles.has(file);
+        const starsText = meta.rating > 0 ? '★'.repeat(meta.rating) : '';
+        const thumbUrl = getThumbnailUrl(file);
+
+        const card = document.createElement('div');
+        card.className = "bg-gray-900 border border-gray-800 hover:border-purple-500 rounded-lg overflow-hidden flex flex-col cursor-pointer transition shadow hover:shadow-purple-500/15 group h-64";
+        
+        card.innerHTML = `
+          <div class="w-full bg-gray-950 relative overflow-hidden flex items-center justify-center flex-1 p-1">
+            <img src="${thumbUrl}" class="w-full h-full object-contain group-hover:scale-105 transition duration-300" alt="${esc(file.name)}" loading="lazy">
+            ${meta.flag === 'pick' ? '<span class="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">Pick (P)</span>' : ''}
+            ${meta.flag === 'reject' ? '<span class="absolute top-2 left-2 bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">Reject (X)</span>' : ''}
+            ${isPicked ? '<span class="absolute top-2 right-2 bg-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow z-10">選別済</span>' : ''}
+          </div>
+          <div class="p-2.5 flex flex-col justify-between shrink-0 bg-gray-900/90 border-t border-gray-800/80">
+            <div>
+              <div class="text-xs font-medium text-gray-200 truncate" title="${esc(file.name)}">${esc(file.name)}</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">${(file.size / (1024 * 1024)).toFixed(1)} MB</div>
+            </div>
+            <div class="flex justify-between items-center mt-1.5 pt-1.5 border-t border-gray-800 text-xs">
+              <span class="text-amber-400 font-bold text-[11px]">${starsText}</span>
+              <span class="text-[10px] text-purple-400 font-medium group-hover:underline">選択 →</span>
+            </div>
+          </div>
+        `;
+
+        card.onclick = () => {
+          const delta = index - state.currentIndex;
+          state.currentIndex = index;
+          if (!state.lockedPanel) state.cursorPanel = state.activePanel;
+          if (state.lockedPanel) {
+            state.lockedPanel = null;
+            updateLockBadgeUI();
+            updatePanelBorders();
+          }
+          loadAndRender(true, navFor(delta));
+          gridModal.classList.add('hidden');
+        };
+
+        photoGridContainer.appendChild(card);
+      });
+    }
+
+    function setStarFilter(mode, val) {
+      state.filterType = 'star';
+      state.starFilterMode = mode;
+      state.starFilterValue = val;
+      state.flagFilterValue = null;
+
+      const statusText = document.getElementById('filterStatusText');
+      if (mode === 'exact') {
+        statusText.textContent = `★${val} のみ`;
+      } else if (mode === 'over') {
+        statusText.textContent = `★${val} 以上`;
+      }
+
+      applyFilter();
+      state.currentIndex = 0;
+      state.cursorPanel = 'A';
+      state.lockedPanel = null;
+      loadAndRender(true);
+    }
+
+    function setFlagFilter(flagType) {
+      state.filterType = 'flag';
+      state.flagFilterValue = flagType;
+      state.starFilterMode = 'all';
+
+      const statusText = document.getElementById('filterStatusText');
+      if (flagType === 'pick') {
+        statusText.textContent = "Pick (P)";
+      } else if (flagType === 'reject') {
+        statusText.textContent = "Reject (X)";
+      }
+
+      applyFilter();
+      state.currentIndex = 0;
+      state.cursorPanel = 'A';
+      state.lockedPanel = null;
+      loadAndRender(true);
+    }
+
+    function setFilter(type, val) {
+      if (type === 'all') {
+        state.filterType = 'all';
+        state.starFilterMode = 'all';
+        state.starFilterValue = null;
+        state.flagFilterValue = null;
+        document.getElementById('filterStatusText').textContent = "すべて";
+        applyFilter();
+        state.currentIndex = 0;
+        state.cursorPanel = 'A';
+        state.lockedPanel = null;
+        loadAndRender(true);
+      }
+    }
+
+    function applyFilter() {
+      const baseFiles = state.allFolderFiles || [];
+      if (state.filterType === 'all') {
+        state.currentFiles = baseFiles;
+      } else if (state.filterType === 'star') {
+        if (state.starFilterMode === 'exact') {
+          state.currentFiles = baseFiles.filter(file => {
+            const meta = state.metadataMap.get(file) || { rating: 0 };
+            return meta.rating === state.starFilterValue;
+          });
+        } else if (state.starFilterMode === 'over') {
+          state.currentFiles = baseFiles.filter(file => {
+            const meta = state.metadataMap.get(file) || { rating: 0 };
+            return meta.rating >= state.starFilterValue;
+          });
+        }
+      } else if (state.filterType === 'flag') {
+        state.currentFiles = baseFiles.filter(file => {
+          const meta = state.metadataMap.get(file) || { flag: null };
+          return meta.flag === state.flagFilterValue;
+        });
+      }
+      currentFolderCountEl.textContent = `${state.currentFiles.length}枚`;
+    }
+
+    function setActivePanel(panel) {
+      state.activePanel = panel;
+      updatePanelBorders();
+      updateMetadataUI();
+      renderHistogram();
+      updateFileListSidebar(false);
+    }
+
+    function updatePanelBorders() {
+      containerA.classList.remove('active-panel-border', 'locked-panel-border', 'locked-active-panel-border');
+      const isALocked = state.lockedPanel === 'A';
+      const isAActive = state.activePanel === 'A';
+
+      if (isALocked && isAActive) {
+        containerA.classList.add('locked-active-panel-border');
+      } else if (isALocked) {
+        containerA.classList.add('locked-panel-border');
+      } else if (isAActive) {
+        containerA.classList.add('active-panel-border');
+      }
+
+      containerB.classList.remove('active-panel-border', 'locked-panel-border', 'locked-active-panel-border');
+      const isBLocked = state.lockedPanel === 'B';
+      const isBActive = state.activePanel === 'B';
+
+      if (isBLocked && isBActive) {
+        containerB.classList.add('locked-active-panel-border');
+      } else if (isBLocked) {
+        containerB.classList.add('locked-panel-border');
+      } else if (isBActive) {
+        containerB.classList.add('active-panel-border');
+      }
+    }
+
+    function toggleLockActivePanel() {
+      if (state.lockedPanel === state.activePanel) {
+        state.lockedPanel = null;
+      } else {
+        const cur = getIndices();   // ロックする前の並びで、枠のある画面の写真を固定する
+        state.lockedPanel = state.activePanel;
+        state.lockedIndex = state.activePanel === 'A' ? cur.indexA : cur.indexB;
+      }
+      updateLockBadgeUI();
+      updatePanelBorders();
+      updateFileListSidebar(true);
+      loadAndRender();
+    }
+
+    function updateLockBadgeUI() {
+      const lockBadge = document.getElementById('lockStatusBadge');
+      const lockText = document.getElementById('lockStatusText');
+      if (state.lockedPanel) {
+        lockBadge.classList.remove('hidden');
+        lockBadge.classList.add('flex');
+        lockText.textContent = `画面${state.lockedPanel} ロック中`;
+      } else {
+        lockBadge.classList.add('hidden');
+        lockBadge.classList.remove('flex');
+      }
+    }
+
+    function navFor(delta) {
+      if (!delta) return null;
+      return Math.abs(delta) === 1 ? { dir: delta } : { dir: delta > 0 ? 1 : -1, jump: true };
+    }
+
+    function nextImage() {
+      if (state.currentIndex < state.currentFiles.length - 1) {
+        state.currentIndex++;
+        if (state.lockedPanel) {
+          state.lockedPanel = 'A';
+          setActivePanel('B');
+        } else {
+          state.cursorPanel = 'B';
+          setActivePanel('B');
+        }
+        loadAndRender(true, { dir: 1 });
+      }
+    }
+
+    function prevImage() {
+      if (state.currentIndex > 0) {
+        state.currentIndex--;
+        if (state.lockedPanel) {
+          state.lockedPanel = 'B';
+          setActivePanel('A');
+        } else {
+          state.cursorPanel = 'A';
+          setActivePanel('A');
+        }
+        loadAndRender(true, { dir: -1 });
+      }
+    }
+
+    function getIndices() {
+      // 左が前の写真、右が次の写真の並びにする。送っている写真は、右送りなら右(B)、左送りなら左(A)に出る
+      const last = state.currentFiles.length - 1;
+      let indexA, indexB;
+      if (state.cursorPanel === 'B') {
+        indexB = state.currentIndex;
+        indexA = indexB > 0 ? indexB - 1 : (last > 0 ? 1 : 0);
+      } else {
+        indexA = state.currentIndex;
+        indexB = indexA < last ? indexA + 1 : (last > 0 ? indexA - 1 : 0);
+      }
+
+      if (state.lockedPanel === 'A') {
+        indexA = state.lockedIndex;
+        indexB = state.currentIndex;
+      } else if (state.lockedPanel === 'B') {
+        indexB = state.lockedIndex;
+        indexA = state.currentIndex;
+      }
+      return { indexA, indexB };
+    }
+
+    function getActiveFile() {
+      if (state.currentFiles.length === 0) return null;
+      const { indexA, indexB } = getIndices();
+      const targetIndex = state.activePanel === 'A' ? indexA : indexB;
+      return state.currentFiles[targetIndex];
+    }
+
+    function getActiveIndex() {
+      if (state.currentFiles.length === 0) return -1;
+      const { indexA, indexB } = getIndices();
+      return state.activePanel === 'A' ? indexA : indexB;
+    }
+
+    function setRating(rating) {
+      const file = getActiveFile();
+      if (!file) return;
+      const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+      meta.rating = rating;
+      state.metadataMap.set(file, meta);
+      
+      if (state.filterType !== 'all') {
+        applyFilter();
+      }
+
+      updateMetadataUI();
+      updateFileListSidebar(false);
+      scheduleSave();
+    }
+
+    function setFlag(flag) {
+      const file = getActiveFile();
+      if (!file) return;
+      const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+      
+      // トグル動作：すでに同じフラグがついている場合は解除(null)にする
+      if (meta.flag === flag) {
+        meta.flag = null;
+      } else {
+        meta.flag = flag;
+      }
+
+      state.metadataMap.set(file, meta);
+
+      if (meta.flag === 'pick') state.pickedFiles.add(file);
+      else state.pickedFiles.delete(file);
+
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+      
+      if (state.filterType !== 'all') {
+        applyFilter();
+      }
+
+      updateMetadataUI();
+      updateFileListSidebar(false);
+      render();
+      scheduleSave();
+    }
+
+    function clearAllMetadataForFolder() {
+      if (!state.allFolderFiles || state.allFolderFiles.length === 0) return;
+
+      state.allFolderFiles.forEach(file => {
+        const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+        meta.rating = 0;
+        meta.flag = null;
+        state.metadataMap.set(file, meta);
+        state.pickedFiles.delete(file);
+      });
+
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+
+      if (state.filterType !== 'all') {
+        applyFilter();
+      }
+
+      updateMetadataUI();
+      updateFileListSidebar(false);
+      render();
+      scheduleSave();
+    }
+
+    /**
+     * 全ファイルの状態・選別結果・フラグ・星評価を完全初期化して最初からやり直す
+     */
+    function resetAllState() {
+      if (state.allFiles.length === 0) return;
+
+      state.pickedFiles.clear();
+      state.allFiles.forEach(file => {
+        state.metadataMap.set(file, { rating: 0, flag: null });
+      });
+
+      state.lockedPanel = null;
+      state.currentIndex = 0;
+      state.cursorPanel = 'A';
+      setFilter('all', null);
+
+      if (pickedCountEl) pickedCountEl.textContent = 0;
+
+      updateLockBadgeUI();
+      updatePanelBorders();
+      loadAndRender(true);
+      scheduleSave();
+    }
+
+    function togglePickTargetImage() {
+      const file = getActiveFile();
+      if (!file) return;
+      const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+      if (meta.flag === 'pick') {
+        meta.flag = null;
+        state.pickedFiles.delete(file);
+      } else {
+        meta.flag = 'pick';
+        state.pickedFiles.add(file);
+      }
+      state.metadataMap.set(file, meta);
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+      updateFileListSidebar(false);
+      updateMetadataUI();
+      scheduleSave();
+    }
+
+    function getThumbnailUrl(file) {
+      if (!file) return '';
+      // デスクトップ版: 縮小サムネイル（元の写真をそのまま読み込まないので軽い）
+      if (file.path && window.nativeApp && window.nativeApp.thumbUrl) {
+        return window.nativeApp.thumbUrl(file.path, file.mtimeMs, file.size);
+      }
+      if (!file._tempUrl) {
+        file._tempUrl = URL.createObjectURL(file);
+      }
+      return file._tempUrl;
+    }
+
+    // 画像一覧の行は一度だけ作って使い回す（1枚送るたびに全件を作り直さない）
+    const listNodes = new Map();   // file -> {el, sig}
+    let listBase = null;           // 行を作った元の一覧（フォルダが変わったら捨てる）
+    let listShown = null;          // いま画面に並べている一覧
+
+    function fillListItem(el, file, view) {
+      const { isActive, isDisplayedInCanvas, isPicked, index, indexA, meta } = view;
+      const cardBgClass = isDisplayedInCanvas
+        ? 'bg-gray-800 font-semibold'
+        : 'bg-gray-900/40 hover:bg-gray-800/80';
+      const borderStyle = isActive ? 'border-2 border-lime-400 shadow-lg shadow-lime-500/20' : 'border-transparent';
+      el.className = `p-1.5 rounded cursor-pointer flex items-center space-x-2.5 text-xs transition ${borderStyle} ${cardBgClass} text-gray-200`;
+      el.onclick = () => selectFileFromList(file);
+
+      const starsText = meta.rating > 0 ? '★'.repeat(meta.rating) : '';
+      el.innerHTML = `
+        <div class="w-16 h-16 bg-gray-950 rounded overflow-hidden flex-shrink-0 relative flex items-center justify-center p-0.5 border border-gray-800">
+          <img src="${getThumbnailUrl(file)}" class="w-full h-full object-contain rounded-sm" alt="${esc(file.name)}" loading="lazy" decoding="async">
+          ${meta.flag === 'pick' ? '<span class="absolute top-0.5 left-0.5 bg-emerald-600 text-white text-[9px] font-bold px-1 py-0.2 rounded shadow z-10">P</span>' : ''}
+          ${meta.flag === 'reject' ? '<span class="absolute top-0.5 left-0.5 bg-rose-600 text-white text-[9px] font-bold px-1 py-0.2 rounded shadow z-10">X</span>' : ''}
+        </div>
+
+        <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5 h-16">
+          <div>
+            <div class="truncate text-xs ${isActive ? 'text-lime-300 font-bold' : (isDisplayedInCanvas ? 'text-amber-200 font-medium' : 'text-gray-200')}" title="${esc(file.name)}">
+              ${esc(file.name)}
+            </div>
+            <div class="text-[10px] text-gray-400 mt-0.5">
+              ${(file.size / (1024 * 1024)).toFixed(1)} MB ${isDisplayedInCanvas ? '<span class="text-blue-400 font-bold ml-1">[' + (index === indexA ? '画面A' : '画面B') + ']</span>' : ''}
+            </div>
+          </div>
+
+          <div class="flex justify-between items-end">
+            <div class="text-[11px] text-amber-400 font-bold">
+              ${starsText}
+            </div>
+            ${isPicked ? `<span class="bg-emerald-600/35 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded text-[9px] font-bold">F10</span>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    // 一覧の写真を選んだとき
+    function selectFileFromList(file) {
+      const index = state.currentFiles.indexOf(file);
+      if (index < 0) return;
+      let delta = 0;
+      if (state.lockedPanel) {
+        if (state.activePanel === 'A') {
+          if (state.lockedPanel === 'A') { delta = index - state.lockedIndex; state.lockedIndex = index; }
+          else { delta = index - state.currentIndex; state.currentIndex = index; }
+        } else {
+          if (state.lockedPanel === 'B') { delta = index - state.lockedIndex; state.lockedIndex = index; }
+          else { delta = index - state.currentIndex; state.currentIndex = index; }
+        }
+      } else {
+        delta = index - state.currentIndex;
+        state.currentIndex = index;
+        state.cursorPanel = state.activePanel;
+      }
+      loadAndRender(true, navFor(delta));
+    }
+
+    function updateFileListSidebar(shouldScroll = false) {
+      if (state.currentFiles.length === 0) {
+        fileListEl.replaceChildren();
+        listNodes.clear();
+        listShown = null;
+        lockedThumbnailSection.classList.add('hidden');
+        return;
+      }
+
+      const { indexA, indexB } = getIndices();
+      const activeIndex = getActiveIndex();
+
+      if (state.lockedPanel) {
+        lockedThumbnailSection.classList.remove('hidden');
+        lockedPanelLabel.textContent = `画面${state.lockedPanel}`;
+        const lockedFile = state.currentFiles[state.lockedIndex];
+        const lockedMeta = state.metadataMap.get(lockedFile) || { rating: 0, flag: null };
+        const lockedStars = lockedMeta.rating > 0 ? '★'.repeat(lockedMeta.rating) : '';
+        const isLockedActive = (state.activePanel === state.lockedPanel);
+
+        lockedThumbContainer.className = `bg-gray-900 border rounded p-1 flex items-center space-x-2.5 transition ${isLockedActive ? 'border-2 border-lime-400 bg-gray-800' : 'border-rose-500/50'}`;
+        lockedThumbContainer.innerHTML = `
+          <div class="w-14 h-14 bg-gray-950 rounded overflow-hidden flex-shrink-0 relative flex items-center justify-center p-0.5 border border-gray-800">
+            <img src="${getThumbnailUrl(lockedFile)}" class="w-full h-full object-contain rounded-sm" alt="${esc(lockedFile.name)}">
+            <span class="absolute top-0.5 left-0.5 bg-rose-600 text-white text-[8px] font-bold px-1 rounded shadow z-10">L</span>
+          </div>
+          <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5 h-14">
+            <div>
+              <div class="truncate text-xs ${isLockedActive ? 'text-lime-300 font-bold' : 'text-rose-200 font-medium'}" title="${esc(lockedFile.name)}">
+                ${esc(lockedFile.name)}
+              </div>
+              <div class="text-[10px] text-gray-400 mt-0.5">
+                ${(lockedFile.size / (1024 * 1024)).toFixed(1)} MB <span class="text-rose-400 font-bold ml-1">[画面${state.lockedPanel} 固定]</span>
+              </div>
+            </div>
+            <div class="flex justify-between items-end">
+              <div class="text-[11px] text-amber-400 font-bold">${lockedStars}</div>
+            </div>
+          </div>
+        `;
+        lockedThumbContainer.onclick = () => {
+          setActivePanel(state.lockedPanel);
+        };
+      } else {
+        lockedThumbnailSection.classList.add('hidden');
+      }
+
+      if (listBase !== state.allFolderFiles) {
+        listNodes.clear();
+        listBase = state.allFolderFiles;
+        listShown = null;
+      }
+
+      let activeElementNode = null;
+      const nodes = new Array(state.currentFiles.length);
+
+      state.currentFiles.forEach((file, index) => {
+        const isActive = (index === activeIndex);
+        const isDisplayedInCanvas = (index === indexA || index === indexB);
+        const isPicked = state.pickedFiles.has(file);
+        const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+
+        // 見た目に関わる値が変わった行だけ作り直す
+        const sig = [isActive ? 1 : 0, isDisplayedInCanvas ? (index === indexA ? 'A' : 'B') : 0, isPicked ? 1 : 0, meta.rating, meta.flag || ''].join('|');
+        let rec = listNodes.get(file);
+        if (!rec) {
+          rec = { el: document.createElement('div'), sig: null };
+          listNodes.set(file, rec);
+        }
+        if (rec.sig !== sig) {
+          fillListItem(rec.el, file, { isActive, isDisplayedInCanvas, isPicked, index, indexA, meta });
+          rec.sig = sig;
+        }
+        nodes[index] = rec.el;
+        if (isActive) activeElementNode = rec.el;
+      });
+
+      // 並び（絞り込み）が変わったときだけ、一覧を並べ直す
+      if (listShown !== state.currentFiles || fileListEl.childElementCount !== nodes.length) {
+        const frag = document.createDocumentFragment();
+        nodes.forEach((n) => frag.appendChild(n));
+        fileListEl.replaceChildren(frag);
+        listShown = state.currentFiles;
+      }
+
+      if (shouldScroll && activeElementNode) {
+        const node = activeElementNode;
+        setTimeout(() => {
+          node.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+        }, 0);
+      }
+    }
+
+    // nav: 送りの方向 {dir: 1|-1, jump?: bool}。null のときは演出なしで切り替える
+    async function loadAndRender(shouldScroll = false, nav = null) {
+      if (state.currentFiles.length === 0) {
+        Display.show({ A: null, B: null }, null);
+        updateFileListSidebar(false);
+        renderHistogram();
+        return;
+      }
+
+      const { indexA, indexB } = getIndices();
+      const fileA = state.currentFiles[indexA];
+      const fileB = state.currentFiles[indexB];
+
+      labelA.textContent = fileA ? `画面A: ${fileA.name}` : '画面A: 未選択';
+      labelB.textContent = fileB ? `画面B: ${fileB.name}` : '画面B: 未選択';
+
+      updateCanvasOverlay(fileA, overlayBadgeA, overlayFlagA, overlayStarsA);
+      updateCanvasOverlay(fileB, overlayBadgeB, overlayFlagB, overlayStarsB);
+
+      // 画像の準備を待たずに切り替える（出来ていなければ縮小サムネイルで先に見せ、あとで差し替える）
+      Display.show({ A: fileA, B: fileB }, nav);
+      updateFileListSidebar(shouldScroll);
+      updateMetadataUI();
+      readEXIFData(getActiveFile());
+      prefetchAround(nav ? nav.dir : 1);
+    }
+
+    // 進む方向の先の写真を、操作の合間に準備しておく
+    function prefetchAround(dir) {
+      const files = state.currentFiles;
+      const cur = state.currentIndex;
+      const order = [cur + dir, cur + dir * 2, cur - dir, cur + dir * 3, cur - dir * 2];
+      const list = [];
+      order.forEach((i) => {
+        if (i >= 0 && i < files.length && !list.includes(files[i])) list.push(files[i]);
+      });
+      Display.prefetch(list);
+    }
+
+    function updateCanvasOverlay(file, badgeEl, flagEl, starsEl) {
+      if (!file) {
+        badgeEl.classList.add('hidden');
+        return;
+      }
+      const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
+      let hasContent = false;
+
+      if (meta.flag === 'pick') {
+        flagEl.textContent = 'P';
+        flagEl.className = 'font-bold px-1.5 py-0.5 rounded text-[10px] bg-emerald-600 text-white';
+        flagEl.classList.remove('hidden');
+        hasContent = true;
+      } else if (meta.flag === 'reject') {
+        flagEl.textContent = 'X';
+        flagEl.className = 'font-bold px-1.5 py-0.5 rounded text-[10px] bg-rose-600 text-white';
+        flagEl.classList.remove('hidden');
+        hasContent = true;
+      } else {
+        flagEl.classList.add('hidden');
+      }
+
+      if (meta.rating > 0) {
+        starsEl.textContent = '★'.repeat(meta.rating);
+        starsEl.classList.remove('hidden');
+        hasContent = true;
+      } else {
+        starsEl.classList.add('hidden');
+      }
+
+      if (hasContent) {
+        badgeEl.classList.remove('hidden');
+        badgeEl.classList.add('flex');
+      } else {
+        badgeEl.classList.add('hidden');
+      }
+    }
+
+    function render() {
+      if (state.currentFiles.length === 0) return;
+      Display.paintAll();
+    }
+
+    async function readEXIFData(file) {
+      if (!file || typeof EXIF === 'undefined') {
+        exifInfoEl.innerHTML = '<p class="text-gray-500 italic text-center py-2">EXIFデータなし</p>';
+        return;
+      }
+
+      // 画像の準備ができたら、ヒストグラムとEXIFを表示する
+      const source = await Display.getExifSource(file);
+      if (file !== getActiveFile()) return;
+      renderHistogram();
+      if (!source) {
+        exifInfoEl.innerHTML = '<p class="text-gray-500 italic text-center py-2">EXIFデータなし</p>';
+        return;
+      }
+
+      EXIF.getData(source, function() {
+        const tags = EXIF.getAllTags(this);
+        if (!tags || Object.keys(tags).length === 0) {
+          exifInfoEl.innerHTML = '<p class="text-gray-500 italic text-center py-2">EXIFデータなし</p>';
+          return;
+        }
+
+        const make = esc(tags.Make || '-');
+        const model = esc(tags.Model || '-');
+        const fNumber = tags.FNumber ? `f/${tags.FNumber}` : '-';
+        const exposureTime = tags.ExposureTime ? (tags.ExposureTime < 1 ? `1/${Math.round(1/tags.ExposureTime)}` : `${tags.ExposureTime}s`) : '-';
+        const iso = tags.ISOSpeedRatings || '-';
+        const focalLength = tags.FocalLength ? `${tags.FocalLength}mm` : '-';
+        const dateTime = esc(tags.DateTimeOriginal || tags.DateTime || '-');
+
+        exifInfoEl.innerHTML = `
+          <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+            <span class="text-gray-400">カメラ:</span> <span class="text-gray-200 font-medium truncate">${make} ${model}</span>
+            <span class="text-gray-400">絞り:</span> <span class="text-amber-300 font-mono">${fNumber}</span>
+            <span class="text-gray-400">SS:</span> <span class="text-amber-300 font-mono">${exposureTime}</span>
+            <span class="text-gray-400">ISO:</span> <span class="text-amber-300 font-mono">${iso}</span>
+            <span class="text-gray-400">焦点距離:</span> <span class="text-gray-200 font-mono">${focalLength}</span>
+            <span class="text-gray-400">日時:</span> <span class="text-gray-200 font-mono text-[10px] truncate">${dateTime}</span>
+          </div>
+        `;
+      });
+    }
+
+    function updateMetadataUI() {
+      const activeFile = getActiveFile();
+      if (!activeFile) return;
+
+      const meta = state.metadataMap.get(activeFile) || { rating: 0, flag: null };
+      const stars = ratingStarsEl.querySelectorAll('i');
+
+      stars.forEach((star, i) => {
+        if (i < meta.rating) {
+          star.className = 'fa-solid fa-star text-amber-400';
+        } else {
+          star.className = 'fa-regular fa-star text-gray-600';
+        }
+      });
+
+      const { indexA, indexB } = getIndices();
+      updateCanvasOverlay(state.currentFiles[indexA], overlayBadgeA, overlayFlagA, overlayStarsA);
+      updateCanvasOverlay(state.currentFiles[indexB], overlayBadgeB, overlayFlagB, overlayStarsB);
+    }
+
+    function renderHistogram() {
+      const hCtx = state.histCtx;
+      if (!hCtx) return;
+
+      const hw = histCanvas.width;
+      const hh = histCanvas.height;
+
+      hCtx.clearRect(0, 0, hw, hh);
+
+      // 画像ごとに一度だけ数えたものを使う（画面の描画のたびに画素を読み直さない）
+      const hist = Display.getHist(state.activePanel);
+      if (!hist) return;
+
+      try {
+        const rHist = hist.r, gHist = hist.g, bHist = hist.b, lHist = hist.l;
+        const mode = histModeSelect.value;
+        const maxVal = Math.max(...(mode === 'rgb' ? [Math.max(...rHist), Math.max(...gHist), Math.max(...bHist)] : lHist)) || 1;
+
+        hCtx.lineWidth = 1;
+        if (mode === 'rgb') {
+          const channels = [
+            { data: rHist, color: 'rgba(239, 68, 68, 0.5)' },
+            { data: gHist, color: 'rgba(34, 197, 94, 0.5)' },
+            { data: bHist, color: 'rgba(59, 130, 246, 0.5)' }
+          ];
+
+          channels.forEach(ch => {
+            hCtx.fillStyle = ch.color;
+            hCtx.beginPath();
+            hCtx.moveTo(0, hh);
+            for (let i = 0; i < 256; i++) {
+              const x = (i / 255) * hw;
+              const y = hh - Math.min(1, ch.data[i] / maxVal) * hh;
+              hCtx.lineTo(x, y);
+            }
+            hCtx.lineTo(hw, hh);
+            hCtx.closePath();
+            hCtx.fill();
+          });
+        } else {
+          hCtx.fillStyle = 'rgba(229, 231, 235, 0.6)';
+          hCtx.beginPath();
+          hCtx.moveTo(0, hh);
+          for (let i = 0; i < 256; i++) {
+            const x = (i / 255) * hw;
+            const y = hh - (lHist[i] / maxVal) * hh;
+            hCtx.lineTo(x, y);
+          }
+          hCtx.lineTo(hw, hh);
+          hCtx.closePath();
+          hCtx.fill();
+        }
+      } catch (e) {}
+    }
+
+    // ---- 書き出す写真の条件（Pick / 星の数）
+    const exportCrit = { pick: true, stars: new Set(), excludeReject: true };
+    try {
+      const saved = JSON.parse(localStorage.getItem('pci.exportCrit') || 'null');
+      if (saved) {
+        exportCrit.pick = !!saved.pick;
+        exportCrit.stars = new Set((saved.stars || []).filter((n) => n >= 0 && n <= 5));
+        exportCrit.excludeReject = saved.excludeReject !== false;
+      }
+    } catch (e) { /* 既定値のまま */ }
+
+    function saveExportCrit() {
+      lsSet('pci.exportCrit', JSON.stringify({ pick: exportCrit.pick, stars: Array.from(exportCrit.stars), excludeReject: exportCrit.excludeReject }));
+    }
+
+    function matchesExport(meta) {
+      if (exportCrit.excludeReject && meta.flag === 'reject') return false;
+      return (exportCrit.pick && meta.flag === 'pick') || exportCrit.stars.has(meta.rating);
+    }
+
+    function getExportFiles() {
+      return (state.allFolderFiles || []).filter((f) => matchesExport(state.metadataMap.get(f) || { rating: 0, flag: null }));
+    }
+
+    function renderExportModal() {
+      const all = state.allFolderFiles || [];
+      const counts = { pick: 0, 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      all.forEach((f) => {
+        const m = state.metadataMap.get(f) || { rating: 0, flag: null };
+        if (m.flag === 'pick') counts.pick++;
+        counts[m.rating]++;
+      });
+      const chips = document.getElementById('exportCritChips');
+      const defs = [['pick', 'Pick', counts.pick]].concat([5, 4, 3, 2, 1, 0].map((n) => [n, n === 0 ? '未評価' : '★' + n, counts[n]]));
+      chips.innerHTML = '';
+      defs.forEach(([key, label, n]) => {
+        const on = key === 'pick' ? exportCrit.pick : exportCrit.stars.has(key);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.key = String(key);
+        b.className = 'px-2.5 py-1 rounded-md border text-xs font-medium transition ' + (on
+          ? (key === 'pick' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-amber-500 border-amber-300 text-gray-900')
+          : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700');
+        b.textContent = `${label} (${n})`;
+        chips.appendChild(b);
+      });
+      document.getElementById('exportExcludeReject').checked = exportCrit.excludeReject;
+
+      const files = getExportFiles();
+      modalPickedList.innerHTML = '';
+      document.getElementById('exportCountLine').textContent = `書き出す写真: ${files.length} 枚`;
+      downloadZipBtn.disabled = files.length === 0;
+      downloadZipBtn.classList.toggle('opacity-50', files.length === 0);
+      if (files.length === 0) {
+        modalPickedList.innerHTML = '<p class="text-rose-400 text-center">条件に合う写真がありません。上の条件を選んでください</p>';
+      } else {
+        files.forEach((file) => {
+          const m = state.metadataMap.get(file) || { rating: 0, flag: null };
+          const div = document.createElement('div');
+          div.className = 'flex justify-between items-center py-1 border-b border-gray-800/60';
+          div.innerHTML = `
+            <span class="truncate text-emerald-300">${esc(file.name)}</span>
+            <span class="text-gray-500 text-[10px] ml-2 shrink-0">${m.flag === 'pick' ? 'P ' : ''}${m.rating > 0 ? '★' + m.rating + ' ' : ''}${(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+          `;
+          modalPickedList.appendChild(div);
+        });
+      }
+    }
+
+    function openExportModal() {
+      const exportResultEl = document.getElementById('exportResult');
+      if (exportResultEl) exportResultEl.classList.add('hidden');
+      renderExportModal();
+      exportModal.classList.remove('hidden');
+    }
+
+    (function setupExportCriteria() {
+      document.getElementById('exportCritChips').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-key]');
+        if (!b) return;
+        if (b.dataset.key === 'pick') exportCrit.pick = !exportCrit.pick;
+        else {
+          const n = parseInt(b.dataset.key, 10);
+          if (exportCrit.stars.has(n)) exportCrit.stars.delete(n); else exportCrit.stars.add(n);
+        }
+        saveExportCrit();
+        renderExportModal();
+      });
+      document.querySelectorAll('.export-preset').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.preset;
+          if (v === 'pick') { exportCrit.pick = true; exportCrit.stars = new Set(); }
+          else { exportCrit.pick = false; exportCrit.stars = new Set(); for (let n = parseInt(v, 10); n <= 5; n++) exportCrit.stars.add(n); }
+          saveExportCrit();
+          renderExportModal();
+        });
+      });
+      document.getElementById('exportExcludeReject').addEventListener('change', (e) => {
+        exportCrit.excludeReject = e.target.checked;
+        saveExportCrit();
+        renderExportModal();
+      });
+    })();
+
+    // 書き出し結果をモーダル内に表示（alertはWindowsのElectronで入力フォーカスが外れることがあるため使わない）
+    function showExportResult(kind, message) {
+      const el = document.getElementById('exportResult');
+      if (!el) return;
+      el.className = 'text-xs rounded-lg border px-3 py-2 leading-relaxed break-all whitespace-pre-line ' + (
+        kind === 'ok'
+          ? 'bg-emerald-950/70 border-emerald-700 text-emerald-200'
+          : 'bg-rose-950/70 border-rose-700 text-rose-200'
+      );
+      el.textContent = message;
+    }
+
+    // デスクトップ版: 元ファイルを「保存先フォルダ/保存フォルダ名」へ直接コピーする
+    async function exportPickedNative(pickedArray, folderName) {
+      const paths = pickedArray
+        .map(file => file.path || window.nativeApp.getPathForFile(file))
+        .filter(p => typeof p === 'string' && p.length > 0);
+
+      if (paths.length === 0) {
+        showExportResult('error', '元ファイルの場所を取得できませんでした。');
+        return;
+      }
+
+      downloadZipBtn.disabled = true;
+      try {
+        const result = await window.nativeApp.exportPicked(paths, folderName);
+        if (result.canceled) return;
+
+        if (result.failed.length === 0) {
+          showExportResult('ok', `${result.copied} 枚を書き出しました。\n保存先: ${result.dir}`);
+        } else {
+          const names = result.failed.map(f => f.name).join(', ');
+          showExportResult('error', `${result.copied} 枚を書き出し、${result.failed.length} 枚は失敗しました（${names}）。\n保存先: ${result.dir}`);
+        }
+      } catch (e) {
+        showExportResult('error', '書き出しに失敗しました: ' + (e && e.message ? e.message : e));
+      } finally {
+        downloadZipBtn.disabled = false;
+      }
+    }
+
+    function downloadPickedImages() {
+      const pickedArray = getExportFiles();
+      if (pickedArray.length === 0) return;
+
+      const folderName = document.getElementById('targetSubFolder').value.trim() || 'choice';
+
+      // Windowsアプリ(Electron)で動作中は、ネイティブのフォルダ書き出しを使う
+      if (window.nativeApp && window.nativeApp.exportPicked) {
+        exportPickedNative(pickedArray, folderName);
+        return;
+      }
+
+      pickedArray.forEach(file => {
+        const a = document.createElement('a');
+        const objectUrl = URL.createObjectURL(file);
+        a.href = objectUrl;
+        a.download = `${folderName}_${esc(file.name)}`;
+        a.click();
+        if (window.URL && window.URL.revokeObjectURL) {
+          window.URL.revokeObjectURL(objectUrl);
+        }
+      });
+
+      exportModal.classList.add('hidden');
+    }
+
+
+    // ============================================================ 表示補正（見た目だけ）
+    const ADJ_DEFS = [
+      ['exposure', '明るさ', -300, 300, (v) => (v / 100 >= 0 ? '+' : '') + (v / 100).toFixed(2) + ' EV', 'in-grad'],
+      ['contrast', 'コントラスト', -100, 100, null],
+      ['temp', '色温度', -100, 100, null, 'temp'],
+      ['tint', '色合い', -100, 100, null, 'tint'],
+      ['sat', '彩度', -100, 100, null],
+      ['shadows', 'シャドウ', -100, 100, null],
+      ['highlights', 'ハイライト', -100, 100, null],
+    ];
+    const adjUi = { values: Object.assign({}, Adjust.DEFAULTS), enabled: true };
+
+    function adjFmt(def, v) {
+      if (def[4]) return def[4](v);
+      return (v > 0 ? '+' : '') + v;
+    }
+
+    function pushAdjust() {
+      Display.setAdjust(adjUi.values, adjUi.enabled);
+      updateAdjustUi();
+    }
+
+    function updateAdjustUi() {
+      const touched = !Adjust.isIdentity(adjUi.values);
+      const btn = document.getElementById('adjustToggleBtn');
+      btn.innerHTML = (adjUi.enabled ? '補正 ON' : '補正 OFF（元の表示）') + ' <span class="opacity-70 font-normal">(\\)</span>';
+      btn.className = 'flex-1 px-2 py-1.5 rounded border text-[11px] font-semibold transition ' + (adjUi.enabled
+        ? 'bg-cyan-700 border-cyan-500 text-white hover:bg-cyan-600'
+        : 'bg-gray-800 border-amber-500 text-amber-300 hover:bg-gray-700');
+      ADJ_DEFS.forEach((d) => {
+        const v = adjUi.values[d[0]];
+        document.getElementById('adjVal-' + d[0]).textContent = adjFmt(d, v);
+        document.getElementById('adjVal-' + d[0]).className = 'w-14 text-right font-mono ' + (v !== 0 ? 'text-cyan-300' : 'text-gray-500');
+      });
+      ['A', 'B'].forEach((k) => {
+        const el = document.getElementById('adjBadge' + k);
+        if (!touched) { el.classList.add('hidden'); return; }
+        el.classList.remove('hidden');
+        el.textContent = adjUi.enabled ? '補正中' : '補正OFF';
+        el.className = 'absolute top-3 right-3 rounded px-2 py-0.5 text-[10px] font-bold z-10 pointer-events-none border ' + (adjUi.enabled
+          ? 'bg-cyan-700/80 border-cyan-400 text-white'
+          : 'bg-gray-900/80 border-gray-600 text-gray-300');
+      });
+    }
+
+    function toggleAdjust() {
+      if (Adjust.isIdentity(adjUi.values)) { toast('補正の値がすべて0です。スライダーで調整してください。', 2500); return; }
+      adjUi.enabled = !adjUi.enabled;
+      pushAdjust();
+    }
+
+    function setupAdjustPanel() {
+      const rows = document.getElementById('adjustRows');
+      const bg = {
+        temp: 'linear-gradient(90deg,#3b82f6,#6b7280 50%,#f59e0b)',
+        tint: 'linear-gradient(90deg,#22c55e,#6b7280 50%,#d946ef)',
+      };
+      ADJ_DEFS.forEach((d) => {
+        const [key, label, min, max] = d;
+        const row = document.createElement('div');
+        row.innerHTML = `
+          <div class="flex items-center justify-between text-[11px] text-gray-300 leading-none mb-0.5">
+            <span>${label}</span><span id="adjVal-${key}" class="w-14 text-right font-mono text-gray-500">0</span>
+          </div>
+          <input type="range" id="adj-${key}" min="${min}" max="${max}" step="1" value="0" class="adj-range w-full" ${bg[d[5]] ? `style="background:${bg[d[5]]}"` : ''}>`;
+        rows.appendChild(row);
+        const input = row.querySelector('input');
+        input.addEventListener('input', () => {
+          adjUi.values[key] = parseInt(input.value, 10) || 0;
+          if (!adjUi.enabled) adjUi.enabled = true;   // 動かしたら補正を効かせる
+          pushAdjust();
+        });
+        input.addEventListener('change', () => input.blur());              // 矢印キーで写真を送れるように、フォーカスを戻す
+        input.addEventListener('dblclick', () => { input.value = 0; adjUi.values[key] = 0; pushAdjust(); });
+      });
+      document.getElementById('adjustToggleBtn').addEventListener('click', (e) => { e.currentTarget.blur(); toggleAdjust(); });
+      document.getElementById('adjustResetBtn').addEventListener('click', (e) => {
+        e.currentTarget.blur();
+        adjUi.values = Object.assign({}, Adjust.DEFAULTS);
+        adjUi.enabled = true;
+        ADJ_DEFS.forEach((d) => { document.getElementById('adj-' + d[0]).value = 0; });
+        pushAdjust();
+      });
+      updateAdjustUi();
+    }
+
+    // ============================================================ デスクトップ版の機能
+    function restorePrefs() {
+      const sel = document.getElementById('transitionSelect');
+      const saved = lsGet('pci.transition');
+      if (saved && ['slide', 'fade', 'none'].includes(saved)) sel.value = saved;
+      Display.setTransitionStyle(sel.value);
+    }
+
+    // ---- 起動時の準備
+    function startNative() {
+      setupProfileModal();
+      updateProfileButton();
+
+      const refreshBtn = document.getElementById('refreshTreeBtn');
+      refreshBtn.classList.remove('hidden');
+      refreshBtn.classList.add('flex');
+
+      FolderTree.init({
+        tree: folderTreeEl,
+        badge: modalFolderCountBadge,
+        refreshBtn,
+        getCurrent: () => state.currentDir || '',
+        onSelect: async (p) => {
+          folderModal.classList.add('hidden');
+          await openFolderNative(p);
+        },
+        onRefreshed: reloadCurrentFolder,
+      });
+
+      // 閉じる直前・隠れたときに、選別結果を保存する
+      window.addEventListener('beforeunload', () => flushSelections(true));
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushSelections(false);
+      });
+
+      const profileError = lsGet('pci.profileError');
+      if (profileError) {
+        lsSet('pci.profileError', '');
+        toast('モニタープロファイルを使えませんでした: ' + profileError + '\nOS標準の色管理に戻しました。', 9000);
+      }
+
+      const last = lsGet('pci.lastFolder');
+      if (last) {
+        openFolderNative(last, { silent: true });
+      } else {
+        // 初回は、PC内のフォルダを最初から一覧表示する
+        folderModal.classList.remove('hidden');
+        FolderTree.open();
+      }
+    }
+
+    // ---- フォルダ / ファイルを開く
+    async function chooseFolderNative() {
+      const p = await window.nativeApp.chooseFolder(state.currentDir || undefined);
+      if (p) await openFolderNative(p);
+    }
+
+    async function chooseFilesNative() {
+      const files = await window.nativeApp.chooseFiles();
+      if (!files || files.length === 0) return;
+      await adoptRecords({ label: '選択した写真', dir: '', records: files, mode: 'files' });
+    }
+
+    async function openFolderNative(dirPath, opts = {}) {
+      let res;
+      try {
+        res = await window.nativeApp.listImages(dirPath);
+      } catch (e) {
+        res = { error: 'EUNKNOWN', files: [] };
+      }
+      if (res.error) {
+        if (!opts.silent) toast(`フォルダを開けません（${res.error}）\n${dirPath}`);
+        return false;
+      }
+      if (res.files.length === 0) toast('このフォルダには画像（JPEG / PNG / WebP）がありません');
+      await adoptRecords({ label: dirPath, dir: dirPath, records: res.files, mode: 'folder' });
+      lsSet('pci.lastFolder', dirPath);
+      return true;
+    }
+
+    // 開いた写真（ファイルの場所つきの記録）を、画面の状態に取り込む
+    async function adoptRecords({ label, dir, records, mode }) {
+      flushSelections(false);
+      Display.reset();
+
+      state.nativeMode = mode;
+      state.currentDir = dir;
+      state.allFiles = records;
+      state.pickedFiles.clear();
+      state.metadataMap.clear();
+      records.forEach((f) => state.metadataMap.set(f, { rating: 0, flag: null }));
+
+      // 前回までの星評価・Pick/Rejectを復元する
+      state.savedBase = {};
+      const dirs = Array.from(new Set(records.map((f) => f.dir)));
+      for (const d of dirs) {
+        let saved = {};
+        try { saved = await window.nativeApp.loadSelections(d); } catch (e) { saved = {}; }
+        state.savedBase[d] = saved || {};
+      }
+      let restored = 0;
+      records.forEach((f) => {
+        const s = state.savedBase[f.dir][f.name];
+        if (!s) return;
+        state.metadataMap.set(f, { rating: s.rating || 0, flag: s.flag || null });
+        if (s.flag === 'pick') state.pickedFiles.add(f);
+        restored++;
+      });
+
+      state.filterType = 'all';
+      state.starFilterMode = 'all';
+      state.starFilterValue = null;
+      state.flagFilterValue = null;
+      document.getElementById('filterStatusText').textContent = 'すべて';
+
+      if (totalCountEl) totalCountEl.textContent = records.length;
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+
+      selectFolderByPath(label, records);
+      currentFolderNameEl.textContent = mode === 'folder' ? baseName(label) : label;
+      currentFolderNameEl.title = label;
+      if (restored > 0) toast(`前回の選別結果を復元しました（${restored} 枚）`, 3000);
+    }
+
+    // 「更新」: いま開いているフォルダの写真一覧を読み直す
+    async function reloadCurrentFolder() {
+      if (state.nativeMode !== 'folder' || !state.currentDir) return;
+      let res;
+      try {
+        res = await window.nativeApp.listImages(state.currentDir);
+      } catch (e) {
+        res = { error: 'EUNKNOWN', files: [] };
+      }
+      if (res.error) {
+        toast(`いまのフォルダを読み直せませんでした（${res.error}）`);
+        return;
+      }
+
+      const oldByName = new Map(state.allFiles.map((f) => [f.name, f]));
+      const activeName = (getActiveFile() || {}).name;
+      const lockedName = state.lockedPanel && state.currentFiles[state.lockedIndex] ? state.currentFiles[state.lockedIndex].name : null;
+
+      // 変わっていない写真は記録を使い回す（キャッシュも残る）。中身が変わった写真は新しく読み直す。
+      const merged = res.files.map((nf) => {
+        const old = oldByName.get(nf.name);
+        return old && old.size === nf.size && old.mtimeMs === nf.mtimeMs ? old : nf;
+      });
+      const nextMeta = new Map();
+      merged.forEach((f) => {
+        const old = oldByName.get(f.name);
+        const m = old ? state.metadataMap.get(old) : null;
+        nextMeta.set(f, m ? { rating: m.rating, flag: m.flag } : { rating: 0, flag: null });
+      });
+
+      const added = merged.filter((f) => !oldByName.has(f.name)).length;
+      const removed = state.allFiles.filter((f) => !merged.some((m) => m.name === f.name)).length;
+      const changed = merged.filter((f) => oldByName.has(f.name) && oldByName.get(f.name) !== f).length;
+
+      state.allFiles = merged;
+      state.metadataMap = nextMeta;
+      state.pickedFiles = new Set(merged.filter((f) => nextMeta.get(f).flag === 'pick'));
+      state.allFolderFiles = [...merged].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      applyFilter();
+
+      const idx = state.currentFiles.findIndex((f) => f.name === activeName);
+      state.currentIndex = idx >= 0 ? idx : Math.min(state.currentIndex, Math.max(0, state.currentFiles.length - 1));
+      if (lockedName) {
+        const li = state.currentFiles.findIndex((f) => f.name === lockedName);
+        if (li >= 0) state.lockedIndex = li;
+        else { state.lockedPanel = null; updateLockBadgeUI(); updatePanelBorders(); }
+      }
+
+      if (totalCountEl) totalCountEl.textContent = merged.length;
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+      loadAndRender(false);
+      toast(added || removed || changed
+        ? `更新しました（追加 ${added} / 削除 ${removed} / 変更 ${changed}）`
+        : '更新しました（変更はありません）', 3000);
+    }
+
+    // ---- ライブ表示（カメラから写真が転送されてきたら、最新の1枚を画面Aに自動で出す）
+    // 1秒弱ごとにフォルダを調べ、大きさと更新時刻が2回続けて同じ写真だけを「転送完了」とみなして取り込む。
+    const live = { on: false, timer: 0, busy: false, seen: new Map() };
+    const LIVE_INTERVAL_MS = 800;
+
+    function updateLiveButton() {
+      const btn = document.getElementById('liveBtn');
+      const dot = document.getElementById('liveDot');
+      document.getElementById('liveText').textContent = live.on ? 'ライブ ON' : 'ライブ OFF';
+      dot.className = 'inline-block w-2.5 h-2.5 rounded-full ' + (live.on ? 'bg-red-500 animate-pulse' : 'bg-gray-500');
+      btn.classList.toggle('border-red-500', live.on);
+      btn.classList.toggle('border-gray-700', !live.on);
+    }
+
+    function setLive(on) {
+      if (on && !(IS_NATIVE && state.nativeMode === 'folder' && state.currentDir)) {
+        toast('ライブ表示は、フォルダを開いているときに使えます。', 3500);
+        return;
+      }
+      live.on = !!on;
+      clearInterval(live.timer);
+      live.seen = new Map();
+      if (live.on) {
+        live.timer = setInterval(livePoll, LIVE_INTERVAL_MS);
+        toast('ライブ表示ON：増えた写真を自動で画面Aに出します。', 3000);
+      }
+      updateLiveButton();
+    }
+
+    async function livePoll() {
+      if (live.busy || !live.on) return;
+      if (state.nativeMode !== 'folder' || !state.currentDir) return;
+      live.busy = true;
+      try {
+        const dir = state.currentDir;
+        const res = await window.nativeApp.listImages(dir);
+        if (res.error || !live.on || dir !== state.currentDir) return;
+        const known = new Map(state.allFiles.map((f) => [f.name, f]));
+        const next = new Map();
+        const ready = [];
+        for (const nf of res.files) {
+          const sig = nf.size + ':' + nf.mtimeMs;
+          next.set(nf.name, sig);
+          const old = known.get(nf.name);
+          if (old && old.size === nf.size && old.mtimeMs === nf.mtimeMs) continue;   // 変わっていない
+          if (nf.size > 0 && live.seen.get(nf.name) === sig) ready.push(nf);          // 2回続けて同じ = 転送完了
+        }
+        live.seen = next;
+        if (ready.length) liveIngest(ready);
+      } catch (e) {
+        /* 次の確認でもう一度やる */
+      } finally {
+        live.busy = false;
+      }
+    }
+
+    function liveIngest(ready) {
+      const byName = new Map(state.allFiles.map((f) => [f.name, f]));
+      const activeName = (getActiveFile() || {}).name;
+      const lockedName = state.lockedPanel && state.currentFiles[state.lockedIndex] ? state.currentFiles[state.lockedIndex].name : null;
+
+      ready.forEach((nf) => {
+        const old = byName.get(nf.name);
+        const m = old ? state.metadataMap.get(old) : null;
+        if (old) { state.metadataMap.delete(old); state.pickedFiles.delete(old); }
+        state.metadataMap.set(nf, m ? { rating: m.rating, flag: m.flag } : { rating: 0, flag: null });
+        if (m && m.flag === 'pick') state.pickedFiles.add(nf);
+        byName.set(nf.name, nf);
+      });
+      state.allFiles = Array.from(byName.values());
+      state.allFolderFiles = [...state.allFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      applyFilter();
+
+      // 取り込んだ中で一番新しい写真（更新時刻が同じなら名前順で後ろ）
+      const newest = ready.slice().sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name, undefined, { numeric: true }))[ready.length - 1];
+      const newIdx = state.currentFiles.indexOf(newest);
+      const canSwitch = live.on && state.lockedPanel !== 'A' && newIdx >= 0;
+
+      if (totalCountEl) totalCountEl.textContent = state.allFiles.length;
+      if (pickedCountEl) pickedCountEl.textContent = state.pickedFiles.size;
+
+      if (canSwitch) {
+        if (state.isZoomed) stopZoom();
+        state.currentIndex = newIdx;
+        if (lockedName) {
+          const li = state.currentFiles.findIndex((f) => f.name === lockedName);
+          if (li >= 0) state.lockedIndex = li;
+        }
+        state.cursorPanel = 'A';
+        setActivePanel('A');
+        loadAndRender(true, { dir: 1 });
+      } else {
+        // 画面は切り替えず、並びの変化だけ反映する
+        const idx = state.currentFiles.findIndex((f) => f.name === activeName);
+        if (idx >= 0) state.currentIndex = idx;
+        if (lockedName) {
+          const li = state.currentFiles.findIndex((f) => f.name === lockedName);
+          if (li >= 0) state.lockedIndex = li;
+        }
+        loadAndRender(false);
+      }
+    }
+
+    document.getElementById('liveBtn').addEventListener('click', (e) => { e.currentTarget.blur(); setLive(!live.on); });
+
+    // ---- 星評価・Pick/Reject の保存（アプリのデータフォルダに、フォルダごとに保存）
+    let saveTimer = 0;
+
+    function scheduleSave() {
+      if (!IS_NATIVE) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => flushSelections(false), 500);
+    }
+
+    function buildDirItems(dir) {
+      const items = { ...(state.savedBase[dir] || {}) };
+      state.allFiles.forEach((f) => {
+        if (f.dir !== dir) return;
+        const m = state.metadataMap.get(f) || { rating: 0, flag: null };
+        if (m.rating > 0 || m.flag) items[f.name] = { rating: m.rating, flag: m.flag };
+        else delete items[f.name];
+      });
+      return items;
+    }
+
+    function flushSelections(sync) {
+      if (!IS_NATIVE || state.nativeMode === null) return;
+      clearTimeout(saveTimer);
+      Object.keys(state.savedBase || {}).forEach((dir) => {
+        const items = buildDirItems(dir);
+        state.savedBase[dir] = items;
+        try {
+          if (sync && window.nativeApp.saveSelectionsSync) window.nativeApp.saveSelectionsSync(dir, items);
+          else window.nativeApp.saveSelections(dir, items).catch(() => {});
+        } catch (e) { /* 保存に失敗しても操作は続けられる */ }
+      });
+    }
+
+    // ---- モニタープロファイル(ICC)
+    async function initMonitorProfile() {
+      let info = null;
+      try { info = await window.nativeApp.getMonitorProfile(); } catch (e) { info = null; }
+      if (!info) return;
+      try {
+        const parsed = ICC.parseProfile(info.bytes);
+        Display.setProfile(parsed, parsed.description || info.name);
+        state.activeProfileFile = info.name;
+      } catch (e) {
+        // 使えないプロファイルが設定されたままだと色が補正されないので、設定を戻して再起動する
+        lsSet('pci.profileError', e.message);
+        window.nativeApp.setMonitorProfile(null).catch(() => {});
+      }
+    }
+
+    function updateProfileButton() {
+      const btn = document.getElementById('openProfileModalBtn');
+      const txt = document.getElementById('profileBtnText');
+      btn.classList.remove('hidden');
+      btn.classList.add('flex');
+      if (Display.hasProfile()) {
+        txt.textContent = 'ICC: ' + (state.activeProfileFile || Display.profileName());
+        btn.classList.add('border-cyan-500');
+      } else {
+        txt.textContent = 'モニターICC';
+        btn.classList.remove('border-cyan-500');
+      }
+    }
+
+    function profileSummary(parsed) {
+      const g = parsed.info.gamma.filter(Number.isFinite);
+      const gamma = g.length ? (g.reduce((a, b) => a + b, 0) / g.length).toFixed(2) : '–';
+      const p = parsed.info.primaries;
+      const xy = (v) => `(${v[0].toFixed(3)}, ${v[1].toFixed(3)})`;
+      return `説明: ${parsed.description || '（なし）'}\n階調(γの目安): ${gamma}\n原色 R${xy(p.r)}  G${xy(p.g)}  B${xy(p.b)}`;
+    }
+
+    function setupProfileModal() {
+      const modal = document.getElementById('profileModal');
+      const listEl = document.getElementById('profileList');
+      const detail = document.getElementById('profileDetail');
+      const applyBtn = document.getElementById('profileApplyBtn');
+      const current = document.getElementById('profileCurrent');
+      let chosen = null;
+
+      const showDetail = (kind, text) => {
+        detail.className = 'text-xs rounded-lg border px-3 py-2 leading-relaxed whitespace-pre-line break-all ' + (
+          kind === 'ok' ? 'bg-emerald-950/70 border-emerald-700 text-emerald-200'
+            : kind === 'error' ? 'bg-rose-950/70 border-rose-700 text-rose-200'
+              : 'bg-gray-950 border-gray-700 text-gray-300');
+        detail.textContent = text;
+      };
+
+      async function preview(path, rowEl) {
+        chosen = null;
+        applyBtn.disabled = true;
+        listEl.querySelectorAll('[data-sel]').forEach((el) => { el.classList.remove('bg-blue-900/60'); delete el.dataset.sel; });
+        if (rowEl) { rowEl.classList.add('bg-blue-900/60'); rowEl.dataset.sel = '1'; }
+        showDetail('info', '読み込み中…');
+        try {
+          const r = await window.nativeApp.readProfile(path);
+          const parsed = ICC.parseProfile(r.bytes);
+          showDetail('ok', `${r.name}\n${profileSummary(parsed)}\n\n使えるプロファイルです。`);
+          chosen = r.path;
+          applyBtn.disabled = false;
+        } catch (e) {
+          showDetail('error', e.message || String(e));
+        }
+      }
+
+      async function open() {
+        current.textContent = Display.hasProfile()
+          ? `使用中: ${state.activeProfileFile || ''}（${Display.profileName()}）`
+          : '使用していません（OSの標準の色管理）';
+        detail.classList.add('hidden');
+        applyBtn.disabled = true;
+        chosen = null;
+        modal.classList.remove('hidden');
+        listEl.innerHTML = '<div class="text-gray-500 text-center mt-6">読み込み中…</div>';
+        let list = [];
+        try { list = await window.nativeApp.listProfiles(); } catch (e) { list = []; }
+        listEl.innerHTML = '';
+        if (list.length === 0) {
+          listEl.innerHTML = '<div class="text-gray-500 text-center mt-6 px-3">プロファイルが見つかりません。「ファイルを選択…」で選んでください。</div>';
+          return;
+        }
+        list.forEach((item) => {
+          const row = document.createElement('div');
+          row.className = 'px-2 py-1 rounded cursor-pointer hover:bg-gray-800 truncate text-gray-300';
+          row.textContent = item.name;
+          row.title = item.path;
+          row.addEventListener('click', () => { preview(item.path, row); detail.classList.remove('hidden'); });
+          listEl.appendChild(row);
+        });
+      }
+
+      document.getElementById('openProfileModalBtn').addEventListener('click', open);
+      document.getElementById('closeProfileModalBtn').addEventListener('click', () => modal.classList.add('hidden'));
+      document.getElementById('closeProfileOkBtn').addEventListener('click', () => modal.classList.add('hidden'));
+
+      document.getElementById('profileChooseBtn').addEventListener('click', async () => {
+        const r = await window.nativeApp.chooseProfile();
+        if (!r) return;
+        detail.classList.remove('hidden');
+        preview(r.path, null);
+      });
+
+      applyBtn.addEventListener('click', async () => {
+        if (!chosen) return;
+        flushSelections(true);
+        applyBtn.disabled = true;
+        showDetail('info', 'プロファイルを切り替えています。アプリを再起動します…');
+        try { await window.nativeApp.setMonitorProfile(chosen); } catch (e) { showDetail('error', e.message || String(e)); }
+      });
+
+      document.getElementById('profileResetBtn').addEventListener('click', async () => {
+        flushSelections(true);
+        detail.classList.remove('hidden');
+        showDetail('info', 'OS標準の色管理に戻しています。アプリを再起動します…');
+        try { await window.nativeApp.setMonitorProfile(null); } catch (e) { showDetail('error', e.message || String(e)); }
+      });
+    }
+
+  </script>
+</body>
+</html>
