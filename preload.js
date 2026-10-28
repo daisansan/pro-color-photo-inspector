@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('nativeApp', {
 
   // 選別した写真をフォルダへ書き出す（保存先はダイアログで選ぶ）
   trashFiles: (paths) => call('trash-files', paths),
+  fileContextMenu: (filePath) => call('file:context-menu', filePath),
   getRawFolder: (jpegDir) => call('raw:get-folder', jpegDir),
   chooseRawFolder: (jpegDir) => call('raw:choose-folder', jpegDir),
   rawPlan: (payload) => call('raw:plan', payload),

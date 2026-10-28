@@ -58,10 +58,10 @@ const { loadSettings, saveSettings } = require('../lib/settings');
 
   // ---------- settings
   const setDir = path.join(root, 'settings');
-  assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null, rawFolders: {} });
+  assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null, rawFolders: {}, openApps: [] });
   saveSettings(setDir, { monitorProfilePath: 'C:\\x.icc' });
   assert.strictEqual(loadSettings(setDir).monitorProfilePath, 'C:\\x.icc');
-  fs.writeFileSync(path.join(setDir, 'settings.json'), 'null'); assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null, rawFolders: {} });
+  fs.writeFileSync(path.join(setDir, 'settings.json'), 'null'); assert.deepStrictEqual(loadSettings(setDir), { monitorProfilePath: null, lastFolder: null, rawFolders: {}, openApps: [] });
 
   // ---------- thumbs
   let made = 0;

@@ -969,7 +969,54 @@
       ['folderModal', 'gridModal', 'exportModal', 'profileModal', 'rawModal'].forEach((id) => document.getElementById(id).classList.add('hidden'));
     }
 
-    // クリック長押しで100%等倍表示
+    // 写真の上（メイン画面・左の一覧・グリッド一覧）での右クリックメニュー
+    async function showFileContextMenu(file, e) {
+      if (e) e.preventDefault();
+      if (!file || !file.path || !window.nativeApp || !window.nativeApp.fileContextMenu) return;
+      let act = null;
+      try { act = await window.nativeApp.fileContextMenu(file.path); } catch (err) { act = null; }
+      if (act === 'delete') await trashFilesInApp([file]);
+      return act;
+    }
+
+    // 指定した写真を、ごみ箱へ（確認の窓つき）。右クリックメニューの「削除」から使う
+    async function trashFilesInApp(files) {
+      const list = files.filter((f) => f && f.path);
+      if (!list.length || !window.nativeApp || !window.nativeApp.trashFiles) return;
+      let r;
+      try { r = await window.nativeApp.trashFiles(list.map((f) => f.path)); } catch (e) { toast('削除できませんでした: ' + (e && e.message ? e.message : e)); return; }
+      if (r.canceled) return;
+      const gone = new Set(r.trashed);
+      const goneFiles = list.filter((f) => gone.has(f.path));
+      goneFiles.forEach((f) => gridSel.delete(f));
+      await clearParentChoiceMarks(goneFiles);
+      removeFilesFromState(goneFiles);
+      if (!gridModal.classList.contains('hidden')) {
+        const top = photoGridContainer.scrollTop;
+        openGridModal();
+        photoGridContainer.scrollTop = top;
+      }
+      toast(r.failed.length ? `削除できませんでした: ${r.failed[0].reason}` : `「${goneFiles[0] ? goneFiles[0].name : ''}」をごみ箱へ移しました`, 3000);
+    }
+
+    // クリックしてすぐは何もしない。少し押し続けたら100%等倍表示にする（クリックで写真を選ぶだけのときに、一瞬拡大されないように）
+    const ZOOM_HOLD_MS = 180;
+    let zoomHoldTimer = null;
+    let zoomHoldPos = null;
+    function cancelZoomHold() { clearTimeout(zoomHoldTimer); zoomHoldTimer = null; }
+    function pressCanvas(e, canvas, panel) {
+      if (state.currentFiles.length === 0) return;
+      const pt = e.touches ? e.touches[0] : e;
+      zoomHoldPos = { clientX: pt.clientX, clientY: pt.clientY };
+      setActivePanel(panel);                      // 枠（アクティブ）はすぐ移る
+      cancelZoomHold();
+      zoomHoldTimer = setTimeout(() => {
+        zoomHoldTimer = null;
+        startZoom({ clientX: zoomHoldPos.clientX, clientY: zoomHoldPos.clientY }, canvas, panel);
+      }, ZOOM_HOLD_MS);
+    }
+
+    // 100%等倍表示を始める
     function startZoom(e, canvas, panel) {
       if (state.currentFiles.length === 0) return;
       setActivePanel(panel);
@@ -1002,6 +1049,7 @@
     }
 
     function stopZoom() {
+      cancelZoomHold();
       if (!state.isZoomed) return;
       state.isZoomed = false;
       zoomStatus.textContent = "クリック長押しで100%拡大";
@@ -1025,10 +1073,21 @@
     }
 
     function attachCanvasEvents(canvas, panel) {
-      canvas.addEventListener('mousedown', (e) => startZoom(e, canvas, panel));
-      canvas.addEventListener('mousemove', (e) => { if (e.buttons === 1) updateZoomPoint(e, canvas); });
+      canvas.addEventListener('mousedown', (e) => { if (e.button === 0) pressCanvas(e, canvas, panel); });
+      canvas.addEventListener('mousemove', (e) => {
+        if (e.buttons !== 1) return;
+        if (zoomHoldTimer) zoomHoldPos = { clientX: e.clientX, clientY: e.clientY };
+        updateZoomPoint(e, canvas);
+      });
+      canvas.addEventListener('contextmenu', (e) => {
+        cancelZoomHold();
+        if (state.currentFiles.length === 0) return;
+        e.preventDefault();
+        setActivePanel(panel);
+        showFileContextMenu(getActiveFile(), e);
+      });
       canvas.addEventListener('wheel', onViewerWheel, { passive: false });
-      canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startZoom(e, canvas, panel); }, { passive: false });
+      canvas.addEventListener('touchstart', (e) => { e.preventDefault(); pressCanvas(e, canvas, panel); }, { passive: false });
       canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateZoomPoint(e, canvas); }, { passive: false });
     }
 
@@ -1343,6 +1402,7 @@
         `;
 
         card.onclick = (ev) => gridClick(ev, index);
+        card.oncontextmenu = (ev) => showFileContextMenu(file, ev);
         card.ondblclick = () => {
           const delta = index - state.currentIndex;
           state.currentIndex = index;
@@ -1982,6 +2042,7 @@
       const borderStyle = isActive ? 'border-2 border-lime-400 shadow-lg shadow-lime-500/20' : 'border-transparent';
       el.className = `p-1.5 rounded cursor-pointer flex items-center space-x-2.5 text-xs transition ${borderStyle} ${cardBgClass} text-gray-200${isLockedRow ? ' row-locked' : ''}`;
       el.onclick = () => selectFileFromList(file);
+      el.oncontextmenu = (e) => showFileContextMenu(file, e);
 
       const starsText = meta.rating > 0 ? '★'.repeat(meta.rating) : '';
       el.innerHTML = `
@@ -2060,6 +2121,7 @@
         const isLockedActive = (state.activePanel === state.lockedPanel);
 
         lockedThumbContainer.className = `bg-gray-900 border rounded p-1 flex items-center space-x-2.5 transition ${isLockedActive ? 'border-2 border-lime-400 bg-gray-800' : 'border-rose-500/50'}`;
+        lockedThumbContainer.oncontextmenu = (e) => showFileContextMenu(lockedFile, e);
         lockedThumbContainer.innerHTML = `
           <div class="w-14 h-14 bg-gray-950 rounded overflow-hidden flex-shrink-0 relative flex items-center justify-center p-0.5 border border-gray-800">
             <img src="${getThumbnailUrl(lockedFile)}" class="w-full h-full object-contain rounded-sm" alt="${esc(lockedFile.name)}">

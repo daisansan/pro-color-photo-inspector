@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -365,6 +365,94 @@ handle('raw:apply', async (payload) => {
     const plan = xmpLib.planSync(rawDir, cleanRawItems(payload.items), { writeZero: !!payload.writeZero, createNew: !!payload.createNew });   // 実行直前にもう一度、対応を調べる
     return { plan, result: xmpLib.applySync(rawDir, plan.matches) };
   } catch (e) { return { error: e && e.message ? e.message : String(e) }; }
+});
+
+// --- 写真の上での右クリックメニュー（Windowsの標準的な操作: 開く / エクスプローラーで表示 / コピー / パスのコピー）
+// 「削除」を選んだときだけ 'delete' を返し、画面側で今までの削除（確認の窓つき・ごみ箱へ）を行う
+const { execFile } = require('child_process');
+// 「他のアプリで開く」: 登録したアプリの一覧から選ぶ。「アプリを選んで開く…」でexeを選ぶと、開いて、次回から一覧に出る
+function launchWithApp(exePath, filePath) {
+  try {
+    const child = require('child_process').spawn(exePath, [filePath], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.on('error', (e) => { dialog.showMessageBox(mainWindow, { type: 'error', title: '他のアプリで開く', message: 'アプリを起動できませんでした。', detail: `${exePath}\n${e && e.message ? e.message : e}` }).catch(() => {}); });
+    child.unref();
+  } catch (e) {
+    dialog.showMessageBox(mainWindow, { type: 'error', title: '他のアプリで開く', message: 'アプリを起動できませんでした。', detail: String(e && e.message ? e.message : e) }).catch(() => {});
+  }
+}
+
+function openAppsList() {
+  return (Array.isArray(settings.openApps) ? settings.openApps : []).filter((a) => a && typeof a.path === 'string' && path.isAbsolute(a.path));
+}
+
+function saveOpenApps(list) {
+  settings.openApps = list.slice(0, 20);
+  try { saveSettings(userDataDir, settings); } catch (e) { /* 保存できなくても続行 */ }
+}
+
+function appLabel(p) { return path.basename(p, path.extname(p)); }
+
+function openWithItem(filePath) {
+  const apps = openAppsList();
+  const sub = apps.map((a) => ({ label: appLabel(a.path), click: () => launchWithApp(a.path, filePath) }));
+  if (sub.length) sub.push({ type: 'separator' });
+  sub.push({
+    label: 'アプリを選んで開く…',
+    click: async () => {
+      const r = await dialog.showOpenDialog(mainWindow, {
+        title: '開くアプリ（.exe）を選択',
+        buttonLabel: 'このアプリで開く',
+        defaultPath: process.env['ProgramFiles'] || undefined,
+        properties: ['openFile'],
+        filters: [{ name: 'アプリ', extensions: ['exe', 'bat', 'cmd', 'lnk'] }, { name: 'すべてのファイル', extensions: ['*'] }],
+      });
+      if (r.canceled || !r.filePaths[0]) return;
+      const exe = r.filePaths[0];
+      if (!openAppsList().some((a) => a.path.toLowerCase() === exe.toLowerCase())) saveOpenApps([...openAppsList(), { path: exe }]);
+      launchWithApp(exe, filePath);
+    },
+  });
+  if (apps.length) {
+    sub.push({
+      label: '登録したアプリを一覧から外す',
+      submenu: apps.map((a) => ({ label: appLabel(a.path), click: () => saveOpenApps(openAppsList().filter((x) => x.path !== a.path)) })),
+    });
+  }
+  return { label: '他のアプリで開く', submenu: sub };
+}
+
+handle('file:context-menu', async (filePath) => {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || !fsb.isViewableImage(filePath)) return null;
+  return new Promise((resolve) => {
+    let chosen = null;
+    const done = () => resolve(chosen);
+    const items = [
+      openWithItem(filePath),
+      { label: 'エクスプローラーで表示', click: () => shell.showItemInFolder(filePath) },
+    ];
+    if (process.platform === 'win32') {
+      items.push({
+        label: 'ファイルをコピー',
+        click: () => {
+          // ファイルそのものをクリップボードへ（エクスプローラーやメールに貼り付けられる）
+          execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -LiteralPath $env:PCI_COPY_PATH'],
+            { env: { ...process.env, PCI_COPY_PATH: filePath }, windowsHide: true }, () => {});
+        },
+      });
+    }
+    items.push(
+      { label: 'ファイルのパスをコピー', click: () => clipboard.writeText(filePath) },
+      { type: 'separator' },
+      { label: '削除（ごみ箱へ）', click: () => { chosen = 'delete'; } },
+    );
+    if (process.env.PCI_E2E) {   // 自動テスト用
+      Menu.buildFromTemplate(items);   // メニューの定義が正しいか確認
+      if (process.env.PCI_E2E_RUN_FIRST_APP && items[0].submenu[0] && items[0].submenu[0].click) items[0].submenu[0].click();
+      resolve({ e2eLabels: items.filter((i) => i.label).map((i) => i.label), openWith: items[0].submenu.map((i) => i.label || '-') });
+      return;
+    }
+    Menu.buildFromTemplate(items).popup({ window: mainWindow, callback: done });
+  });
 });
 
 // --- Cキー: アクティブな写真を、その写真のあるフォルダの下の「choice」フォルダへ、すぐコピーする
