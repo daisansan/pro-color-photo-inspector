@@ -77,6 +77,7 @@ if (!app.requestSingleInstanceLock()) {
 
 // ------------------------------------------------------------------ サムネイル
 let thumbService = null;
+let thumbServiceBig = null;   // グリッド一覧の「中・大・最大」用の大きめサムネイル
 
 // 縮小サイズ(px四方に収まる)を、縦横比を保って計算する
 function fitSize(w, h, px) {
@@ -132,6 +133,7 @@ function setupThumbnailProtocol() {
     ? path.join(userDataDir, 'thumbs')
     : path.join(app.getPath('cache'), 'pro-color-photo-inspector', 'thumbs');
   thumbService = createThumbService({ cacheDir, makeThumb, px: 256, concurrency: 4 });
+  thumbServiceBig = createThumbService({ cacheDir, makeThumb, px: 800, concurrency: 3 });
 
   protocol.handle('pci-thumb', async (request) => {
     try {
@@ -139,7 +141,8 @@ function setupThumbnailProtocol() {
       if (!p || !path.isAbsolute(p) || !fsb.isViewableImage(p)) {
         return new Response('bad request', { status: 400 });
       }
-      const t = await thumbService.getThumbnail(p);
+      const big = new URL(request.url).searchParams.get('b') === '1';
+      const t = await (big ? thumbServiceBig : thumbService).getThumbnail(p);
       return new Response(t.data, {
         headers: {
           'content-type': t.mime,
@@ -320,6 +323,48 @@ handle('settings:set-last-folder', async (p) => {
   settings.lastFolder = p;
   try { saveSettings(userDataDir, settings); } catch (e) { return false; }
   return true;
+});
+
+// --- RAW連携: JPEGの星評価を、RAWフォルダの同名ファイルの .xmp（Lightroom用）へ書き出す
+const xmpLib = require('./lib/xmp');
+handle('raw:get-folder', async (jpegDir) => {
+  const m = settings.rawFolders && typeof settings.rawFolders === 'object' ? settings.rawFolders : {};
+  return typeof jpegDir === 'string' && typeof m[jpegDir] === 'string' ? m[jpegDir] : null;
+});
+handle('raw:choose-folder', async (jpegDir) => {
+  const picked = await dialog.showOpenDialog(mainWindow, {
+    title: 'RAW（CR2など）が入っているフォルダを選択',
+    buttonLabel: 'このフォルダを使う',
+    defaultPath: typeof jpegDir === 'string' ? path.dirname(jpegDir) : undefined,
+    properties: ['openDirectory'],
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return null;
+  const dir = picked.filePaths[0];
+  if (typeof jpegDir === 'string' && path.isAbsolute(jpegDir)) {
+    settings.rawFolders = { ...(settings.rawFolders || {}), [jpegDir]: dir };
+    try { saveSettings(userDataDir, settings); } catch (e) { /* 保存できなくても続行 */ }
+  }
+  return dir;
+});
+function cleanRawItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter((it) => it && typeof it.name === 'string' && it.name === path.basename(it.name))
+    .map((it) => ({ name: it.name, rating: it.rating }));
+}
+handle('raw:plan', async (payload) => {
+  const rawDir = payload && payload.rawDir;
+  if (typeof rawDir !== 'string' || !path.isAbsolute(rawDir)) return { error: 'フォルダが正しくありません' };
+  try {
+    return { plan: xmpLib.planSync(rawDir, cleanRawItems(payload.items), { writeZero: !!payload.writeZero, createNew: !!payload.createNew }) };
+  } catch (e) { return { error: e && e.message ? e.message : String(e) }; }
+});
+handle('raw:apply', async (payload) => {
+  const rawDir = payload && payload.rawDir;
+  if (typeof rawDir !== 'string' || !path.isAbsolute(rawDir)) return { error: 'フォルダが正しくありません' };
+  try {
+    const plan = xmpLib.planSync(rawDir, cleanRawItems(payload.items), { writeZero: !!payload.writeZero, createNew: !!payload.createNew });   // 実行直前にもう一度、対応を調べる
+    return { plan, result: xmpLib.applySync(rawDir, plan.matches) };
+  } catch (e) { return { error: e && e.message ? e.message : String(e) }; }
 });
 
 // --- Cキー: アクティブな写真を、その写真のあるフォルダの下の「choice」フォルダへ、すぐコピーする

@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld('nativeApp', {
 
   // 選別した写真をフォルダへ書き出す（保存先はダイアログで選ぶ）
   trashFiles: (paths) => call('trash-files', paths),
+  getRawFolder: (jpegDir) => call('raw:get-folder', jpegDir),
+  chooseRawFolder: (jpegDir) => call('raw:choose-folder', jpegDir),
+  rawPlan: (payload) => call('raw:plan', payload),
+  rawApply: (payload) => call('raw:apply', payload),
   getLastFolder: () => call('settings:get-last-folder'),
   setLastFolder: (p) => call('settings:set-last-folder', p),
   copyToChoice: (filePath) => call('copy-to-choice', filePath),
@@ -44,8 +48,8 @@ contextBridge.exposeInMainWorld('nativeApp', {
   readImage: (filePath) => call('images:read', filePath),
 
   // 縮小サムネイルのURL（main.js が pci-thumb:// を処理する）
-  thumbUrl: (filePath, mtimeMs, size) =>
-    `pci-thumb://t/?p=${encodeURIComponent(filePath)}&m=${mtimeMs || 0}&s=${size || 0}`,
+  thumbUrl: (filePath, mtimeMs, size, big) =>
+    `pci-thumb://t/?p=${encodeURIComponent(filePath)}&m=${mtimeMs || 0}&s=${size || 0}${big ? '&b=1' : ''}`,
 
   // 星評価・Pick/Rejectの保存と復元
   loadSelections: (folder) => call('selections:load', folder),

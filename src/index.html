@@ -20,6 +20,10 @@
   <script src="display.js"></script>
   <script src="foldertree.js"></script>
   <style>
+    #gridModalBox { width: 99vw; height: 98vh; }
+    #photoGridContainer { grid-template-columns: repeat(auto-fill, minmax(var(--gmin, 190px), 1fr)) !important; gap: var(--ggap, 16px) !important; align-content: start; }
+    #photoGridContainer .grid-card { height: var(--gh, 256px) !important; }
+    .gbtn.gsize.on { background-color: #7c3aed !important; border-color: #c4b5fd !important; color: #fff !important; }
     body.resizing-hide #canvasA, body.resizing-hide #canvasB { visibility: hidden; }
     .row-locked { border: 2px solid #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,.55) !important; }
     .row-locked.border-lime-400 { outline: 2px solid #a3e635; outline-offset: 1px; }
@@ -47,7 +51,7 @@
     html[data-ui] .bg-gray-800\/60 { background-color: color-mix(in srgb, var(--b800) 60%, transparent) !important; }
     html[data-ui] .border-gray-800 { border-color: var(--d800) !important; }
     /* 2画面の仕切り線の色（アクティブ=黄緑・ロック=赤の枠は、この色に上書きされないようにする） */
-    html[data-ui] .divide-gray-800 > :not([hidden]) ~ :not([hidden]):not(.active-panel-border):not(.locked-panel-border):not(.locked-active-panel-border) { border-color: var(--d800) !important; }
+    html[data-ui] .divide-gray-800 > :not([hidden]) ~ :not([hidden]):not(.canvas-container):not(.active-panel-border):not(.locked-panel-border):not(.locked-active-panel-border) { border-color: var(--d800) !important; }
     html[data-ui] .border-gray-800\/80, html[data-ui] .border-gray-800\/60 { border-color: color-mix(in srgb, var(--d800) 70%, transparent) !important; }
     html[data-ui] .border-gray-700 { border-color: var(--d700) !important; }
     html[data-ui] .border-gray-700\/80 { border-color: color-mix(in srgb, var(--d700) 80%, transparent) !important; }
@@ -145,6 +149,25 @@
       background: #e5e7eb; border: 2px solid #0891b2;
     }
     .adj-range:hover::-webkit-slider-thumb { background: #fff; }
+    /* 枠は常に4px分の場所を取る（枠なしのときは背景と同じ色）。枠が付いても消えても、写真の大きさは変わらない */
+    .canvas-container { border: 4px solid var(--viewer-bg, #0a0a0a) !important; box-sizing: border-box; }
+    /* ロックの表示が出ても、ツールバーの高さ(=写真の領域)が変わらないように固定する */
+    #viewerToolbar { height: 38px; box-sizing: border-box; padding-top: 0 !important; padding-bottom: 0 !important; }
+    .raw-sync-btn { background-color: #0369a1 !important; color: #ffffff !important; border: 1px solid #7dd3fc; }
+    .raw-sync-btn:hover { background-color: #0284c7 !important; }
+    .rating-burst {
+      position: absolute; left: 50%; top: 50%; z-index: 20; pointer-events: none; white-space: nowrap;
+      font-size: min(7vw, 16vh); line-height: 1; letter-spacing: .05em; color: #fbbf24;
+      -webkit-text-stroke: 2px rgba(120, 53, 15, .9);
+      text-shadow: 0 2px 4px rgba(0, 0, 0, .5);      /* 軽い影だけ（ぼかしの強い影は動きが重くなる） */
+      will-change: transform, opacity;
+      animation: ratingBurst 1s linear forwards;      /* 一定の速さで、なめらかに縮んで消える */
+    }
+    @keyframes ratingBurst {
+      0%   { transform: translate(-50%, -50%) scale(1.2); opacity: 0; }
+      8%   { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(.25); opacity: 0; }
+    }
     .active-panel-border {
       border: 4px solid #a3e635 !important;
       box-shadow: 0 0 15px rgba(163, 230, 53, 0.4);
@@ -232,6 +255,11 @@
       <button id="copySelectedBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center space-x-2 shadow">
         <i class="fa-solid fa-folder-plus"></i>
         <span>選別写真の書き出し（別窓）</span>
+      </button>
+
+      <button id="rawSyncBtn" class="raw-sync-btn font-medium px-2.5 py-1.5 rounded-lg transition hidden items-center space-x-2 shadow" title="この写真フォルダの星評価を、RAW(CR2など)の同名ファイルの .xmp に書き出します（Lightroom Classic用）">
+        <i class="fa-solid fa-link"></i>
+        <span>RAWへ評価（別窓）</span>
       </button>
 
       <div class="flex items-center space-x-1.5 bg-gray-800 px-2 py-1 rounded-lg border border-gray-700">
@@ -529,8 +557,8 @@
   </div>
 
   <!-- グリッド一覧別ウィンドウ (モーダル) -->
-  <div id="gridModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden flex items-center justify-center z-50 p-6">
-    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-5xl h-[85vh] p-6 shadow-2xl flex flex-col space-y-4">
+  <div id="gridModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden flex items-center justify-center z-50 p-2">
+    <div id="gridModalBox" class="bg-gray-900 border border-gray-800 rounded-xl p-4 shadow-2xl flex flex-col space-y-3">
       <div class="flex justify-between items-center border-b border-gray-800 pb-3">
         <div class="flex items-center space-x-3">
           <div class="bg-purple-600 text-white p-2 rounded-lg">
@@ -543,7 +571,11 @@
             <p class="text-xs text-gray-400" id="gridModalSubTitle">フォルダ内の全写真一覧</p>
           </div>
         </div>
-        <button id="closeGridModalBtn" class="text-gray-400 hover:text-white text-lg px-2"><i class="fa-solid fa-xmark"></i></button>
+        <div class="flex items-center space-x-4">
+          <span class="text-sm text-gray-300 font-medium" id="gridModalCountText">0 枚表示中</span>
+          <button id="closeGridModalOkBtn" class="px-5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition shadow">閉じる</button>
+          <button id="closeGridModalBtn" class="text-gray-400 hover:text-white text-lg px-2"><i class="fa-solid fa-xmark"></i></button>
+        </div>
       </div>
 
       <!-- 複数選択のまとめ操作 -->
@@ -563,6 +595,13 @@
         <button class="gbtn" data-gact="reject">Reject</button>
         <button class="gbtn" data-gact="unflag">解除</button>
         <button class="gbtn gbtn-danger" data-gact="trash" title="選んだ写真を、ごみ箱へ移します（ごみ箱から元に戻せます）">削除（ごみ箱へ）</button>
+        <span class="text-gray-400 ml-3">サムネイル:</span>
+        <span id="gridSizeBtns" class="inline-flex gap-1">
+          <button class="gbtn gsize" data-gsize="s">最小</button>
+          <button class="gbtn gsize" data-gsize="m">中</button>
+          <button class="gbtn gsize" data-gsize="l">大</button>
+          <button class="gbtn gsize" data-gsize="x">最大</button>
+        </span>
       </div>
       <div class="text-[11px] text-gray-400 -mt-2">クリック=選ぶ ／ Ctrl+クリック=1枚ずつ追加・解除 ／ Shift+クリック=間をまとめて選ぶ ／ ダブルクリック=メイン画面で開く</div>
 
@@ -574,10 +613,6 @@
         </div>
       </div>
 
-      <div class="pt-2 flex justify-between items-center border-t border-gray-800">
-        <span class="text-xs text-gray-400" id="gridModalCountText">0 枚表示中</span>
-        <button id="closeGridModalOkBtn" class="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition shadow">閉じる</button>
-      </div>
     </div>
   </div>
 
@@ -632,6 +667,31 @@
   <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-600 text-gray-100 text-xs px-4 py-2 rounded-lg shadow-lg z-[60] hidden max-w-xl text-center whitespace-pre-line"></div>
 
   <!-- 書き出し確認モーダル -->
+  <div id="rawModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6 shadow-2xl flex flex-col space-y-3">
+      <div class="flex justify-between items-start">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-link text-sky-400"></i><span>RAWへ星評価を書き出し（Lightroom用）</span>
+        </h3>
+        <button id="rawCloseBtn" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p class="text-xs text-gray-300">この写真フォルダの星評価を、RAWフォルダにある<b>同じ名前</b>のファイルの横に <b>.xmp</b> として書き出します。RAW本体は変更しません。</p>
+      <div class="text-xs text-gray-400">RAWフォルダ:</div>
+      <div class="flex items-center gap-2">
+        <div id="rawFolderPath" class="flex-1 min-w-0 truncate bg-gray-950 border border-gray-800 rounded px-2 py-1.5 text-xs text-gray-200">未選択</div>
+        <button id="rawChooseBtn" class="gbtn">フォルダを選ぶ</button>
+      </div>
+      <label class="flex items-center space-x-1.5 text-[11px] text-gray-300 cursor-pointer"><input type="checkbox" id="rawWriteZero" class="accent-sky-500"><span>評価なし(0)の写真も書き込む（Lightroom側の星を消します）</span></label>
+      <label class="flex items-start space-x-1.5 text-[11px] text-rose-300 cursor-pointer"><input type="checkbox" id="rawCreateNew" class="accent-rose-500 mt-0.5"><span>.xmpがまだないRAWにも、新しく作る（注意: Lightroomで現像済みの写真は、読み込み時に現像設定が初期化されます。先にLightroomで「メタデータをファイルに保存」した写真には、チェック不要です）</span></label>
+      <div id="rawSummary" class="text-xs text-gray-200 bg-gray-950 border border-gray-800 rounded p-2 min-h-[4rem] whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar"></div>
+      <p class="text-[11px] text-gray-400">Lightroom Classicで取り込み済みの場合は、書き出し後に対象の写真を選び「メタデータ → ファイルからメタデータを読み込む」を実行してください。</p>
+      <div class="flex justify-end gap-2">
+        <button id="rawCancelBtn" class="gbtn">閉じる</button>
+        <button id="rawRunBtn" class="gbtn" style="background:#0369a1;border-color:#7dd3fc;color:#fff" disabled>XMPを書き出す</button>
+      </div>
+    </div>
+  </div>
+
   <div id="exportModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
     <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6 shadow-2xl flex flex-col space-y-4">
       <div class="flex justify-between items-start">
@@ -902,11 +962,11 @@
     }
 
     function anyModalOpen() {
-      return ['folderModal', 'gridModal', 'exportModal', 'profileModal'].some((id) => !document.getElementById(id).classList.contains('hidden'));
+      return ['folderModal', 'gridModal', 'exportModal', 'profileModal', 'rawModal'].some((id) => !document.getElementById(id).classList.contains('hidden'));
     }
 
     function closeAllModals() {
-      ['folderModal', 'gridModal', 'exportModal', 'profileModal'].forEach((id) => document.getElementById(id).classList.add('hidden'));
+      ['folderModal', 'gridModal', 'exportModal', 'profileModal', 'rawModal'].forEach((id) => document.getElementById(id).classList.add('hidden'));
     }
 
     // クリック長押しで100%等倍表示
@@ -1215,7 +1275,24 @@
     let gridAnchor = -1;            // Shift+クリックの起点
     let gridFiles = [];             // いまグリッドに並んでいる写真
 
+    // サムネイルの大きさ（最小=従来の大きさ）
+    const GRID_SIZES = { s: { min: 190, h: 256 }, m: { min: 300, h: 360 }, l: { min: 440, h: 520 }, x: { min: 640, h: 720 } };
+    let gridSizeKey = (() => { const v = lsGet('pci.gridSize'); return GRID_SIZES[v] ? v : 's'; })();
+
+    function applyGridSize(rebuild) {
+      const g = GRID_SIZES[gridSizeKey];
+      photoGridContainer.style.setProperty('--gmin', g.min + 'px');
+      photoGridContainer.style.setProperty('--gh', `min(${g.h}px, calc(100vh - 270px))`);   // 1行が画面に収まる高さまで
+      document.querySelectorAll('#gridSizeBtns .gsize').forEach((b) => b.classList.toggle('on', b.dataset.gsize === gridSizeKey));
+      if (rebuild) {
+        const top = photoGridContainer.scrollTop;
+        openGridModal();
+        photoGridContainer.scrollTop = top;
+      }
+    }
+
     function openGridModal() {
+      applyGridSize(false);
       photoGridContainer.innerHTML = '';
       const filesToDisplay = state.currentFiles || [];
       gridFiles = filesToDisplay;
@@ -1238,7 +1315,7 @@
         const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
         const isPicked = state.pickedFiles.has(file);
         const starsText = meta.rating > 0 ? '★'.repeat(meta.rating) : '';
-        const thumbUrl = getThumbnailUrl(file);
+        const thumbUrl = getThumbnailUrl(file, gridSizeKey !== 's');
 
         const card = document.createElement('div');
         card.className = "grid-card bg-gray-900 border border-gray-800 hover:border-purple-500 rounded-lg overflow-hidden flex flex-col cursor-pointer transition shadow hover:shadow-purple-500/15 group h-64" + (gridSel.has(file) ? ' sel' : '');
@@ -1444,6 +1521,15 @@
       loadAndRender(true);
     }
 
+    document.getElementById('gridSizeBtns').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-gsize]');
+      if (!b || !GRID_SIZES[b.dataset.gsize] || b.dataset.gsize === gridSizeKey) return;
+      gridSizeKey = b.dataset.gsize;
+      lsSet('pci.gridSize', gridSizeKey);
+      b.blur();
+      applyGridSize(true);
+    });
+
     document.getElementById('gridToolbar').addEventListener('click', (ev) => {
       const b = ev.target.closest('[data-gact]');
       if (!b || b.disabled) return;
@@ -1609,6 +1695,7 @@
           if (other >= 0) state.currentIndex = other;
         }
       }
+      syncLockSide();
       updateLockBadgeUI();
       updatePanelBorders();
       updateFileListSidebar(true);
@@ -1640,8 +1727,8 @@
       if (target <= state.currentFiles.length - 1) {
         state.currentIndex = target;
         if (state.lockedPanel) {
-          state.lockedPanel = 'A';
-          setActivePanel('B');
+          syncLockSide();
+          setActivePanel(state.lockedPanel === 'A' ? 'B' : 'A');
         } else {
           state.cursorPanel = 'B';
           setActivePanel('B');
@@ -1656,8 +1743,8 @@
       if (target >= 0) {
         state.currentIndex = target;
         if (state.lockedPanel) {
-          state.lockedPanel = 'B';
-          setActivePanel('A');
+          syncLockSide();
+          setActivePanel(state.lockedPanel === 'A' ? 'B' : 'A');
         } else {
           state.cursorPanel = 'A';
           setActivePanel('A');
@@ -1666,7 +1753,24 @@
       }
     }
 
+    // ロック中も、左右は写真の順番どおりにする（番号の小さい写真が左A、大きい写真が右B）
+    let syncingLock = false;
+    function syncLockSide() {
+      if (!state.lockedPanel || syncingLock) return;
+      if (state.lockedIndex === state.currentIndex) return;
+      const side = state.lockedIndex < state.currentIndex ? 'A' : 'B';
+      if (side === state.lockedPanel) return;
+      syncingLock = true;
+      const activeWasLocked = state.activePanel === state.lockedPanel;
+      state.lockedPanel = side;
+      state.activePanel = activeWasLocked ? side : (side === 'A' ? 'B' : 'A');
+      updateLockBadgeUI();
+      updatePanelBorders();
+      syncingLock = false;
+    }
+
     function getIndices() {
+      syncLockSide();
       // 左が前の写真、右が次の写真の並びにする。送っている写真は、右送りなら右(B)、左送りなら左(A)に出る
       const last = state.currentFiles.length - 1;
       let indexA, indexB;
@@ -1702,21 +1806,36 @@
       return t >= 0 ? t : Math.max(indexA, indexB);
     }
 
+    // 星をつけたとき、アクティブな写真の中央に、星の数だけ大きく出して、小さくなりながら消す
+    function showRatingBurst(rating) {
+      if (!(rating >= 1 && rating <= 5)) return;
+      const container = state.activePanel === 'B' ? containerB : containerA;
+      container.querySelectorAll('.rating-burst').forEach((el) => el.remove());
+      const el = document.createElement('div');
+      el.className = 'rating-burst';
+      el.textContent = '★'.repeat(rating);
+      el.addEventListener('animationend', () => el.remove());
+      container.appendChild(el);
+    }
+
     function setRating(rating) {
       const file = getActiveFile();
       if (!file) return;
+      showRatingBurst(rating);
       const meta = state.metadataMap.get(file) || { rating: 0, flag: null };
       meta.rating = rating;
       state.metadataMap.set(file, meta);
-      
-      if (state.filterType !== 'all') {
-        applyFilter();
-      }
 
-      updateMetadataUI();
-      updateFileListSidebar(false);
-      scheduleSave();
+      // 一覧やヒストグラムなどの更新は、星の動きが始まってから行う（同時に走ると動きが引っかかる）
+      clearTimeout(ratingUiTimer);
+      ratingUiTimer = setTimeout(() => {
+        if (state.filterType !== 'all') applyFilter();
+        updateMetadataUI();
+        updateFileListSidebar(false);
+        scheduleSave();
+      }, 120);
     }
+    let ratingUiTimer = 0;
 
     function setFlag(flag) {
       const file = getActiveFile();
@@ -1838,11 +1957,11 @@
       scheduleSave();
     }
 
-    function getThumbnailUrl(file) {
+    function getThumbnailUrl(file, big) {
       if (!file) return '';
       // デスクトップ版: 縮小サムネイル（元の写真をそのまま読み込まないので軽い）
       if (file.path && window.nativeApp && window.nativeApp.thumbUrl) {
-        return window.nativeApp.thumbUrl(file.path, file.mtimeMs, file.size);
+        return window.nativeApp.thumbUrl(file.path, file.mtimeMs, file.size, !!big);
       }
       if (!file._tempUrl) {
         file._tempUrl = URL.createObjectURL(file);
@@ -1902,6 +2021,8 @@
       if (state.lockedPanel && index === state.lockedIndex) return;   // ロック中の写真は、もう一方の画面には出さない
       let delta = 0;
       if (state.lockedPanel) {
+        syncLockSide();
+        if (state.activePanel === state.lockedPanel && index === state.currentIndex) return;   // 2画面が同じ写真にならないように
         if (state.activePanel === 'A') {
           if (state.lockedPanel === 'A') { delta = index - state.lockedIndex; state.lockedIndex = index; }
           else { delta = index - state.currentIndex; state.currentIndex = index; }
@@ -1909,6 +2030,7 @@
           if (state.lockedPanel === 'B') { delta = index - state.lockedIndex; state.lockedIndex = index; }
           else { delta = index - state.currentIndex; state.currentIndex = index; }
         }
+        syncLockSide();
       } else {
         delta = index - state.currentIndex;
         state.currentIndex = index;
@@ -2410,6 +2532,116 @@
     function pushAdjust() {
       Display.setAdjust(adjUi.values, adjUi.enabled);
       updateAdjustUi();
+      saveAdjustForDir();   // 終了しても、フォルダごとに残す
+    }
+
+    // ============================================================ RAWへ星評価（XMP）
+    const rawState = { dir: null, items: [], plan: null };
+    let rawConfirm = false;   // 新規作成を含むときの、2回押しの確認
+    function rawItems() {
+      const zero = document.getElementById('rawWriteZero').checked;
+      return state.allFiles
+        .map((f) => ({ name: f.name, rating: (state.metadataMap.get(f) || {}).rating || 0 }))
+        .filter((it) => zero || it.rating > 0);
+    }
+    function renderRawPlan(plan) {
+      const sum = document.getElementById('rawSummary');
+      const runBtn = document.getElementById('rawRunBtn');
+      rawState.plan = plan;
+      const newCount = plan.matches.filter((m) => !m.hasXmp).length;
+      const lines = [`書き出せる写真: ${plan.matches.length}枚（新規作成 ${newCount} / 既存xmpの評価を更新 ${plan.matches.length - newCount}）`];
+      if (plan.noXmp && plan.noXmp.length) lines.push(`⚠ .xmpがまだないため書き出さない: ${plan.noXmp.length}枚\n  先にLightroomで対象の写真を選び「メタデータ → メタデータをファイルに保存」(Ctrl+S) を実行してから、もう一度この窓を開いてください。\n  ${plan.noXmp.slice(0, 20).join(', ')}${plan.noXmp.length > 20 ? ' …' : ''}`);
+      if (newCount > 0) lines.push(`⚠ 新規作成 ${newCount}枚: Lightroomで現像済みの写真だと、読み込み時に現像設定が初期化されます。`);
+      rawConfirm = false; document.getElementById('rawRunBtn').textContent = 'XMPを書き出す';
+      if (plan.missing.length) lines.push(`同名のRAWが見つからない: ${plan.missing.length}枚\n  ${plan.missing.slice(0, 30).join(', ')}${plan.missing.length > 30 ? ' …' : ''}`);
+      if (plan.ambiguous.length) lines.push(`同名のRAWが複数あるため除外: ${plan.ambiguous.length}枚\n  ${plan.ambiguous.slice(0, 10).map((a) => a.name).join(', ')}`);
+      if (plan.skippedZero) lines.push(`評価なし(0)のため対象外: ${plan.skippedZero}枚`);
+      sum.textContent = lines.join('\n');
+      runBtn.disabled = plan.matches.length === 0;
+    }
+    async function refreshRawPlan() {
+      const sum = document.getElementById('rawSummary');
+      document.getElementById('rawRunBtn').disabled = true;
+      if (!rawState.dir) { sum.textContent = 'RAWフォルダを選んでください。'; return; }
+      sum.textContent = '確認中…';
+      const r = await window.nativeApp.rawPlan({ rawDir: rawState.dir, items: rawItems(), writeZero: document.getElementById('rawWriteZero').checked, createNew: document.getElementById('rawCreateNew').checked });
+      if (r.error) { sum.textContent = 'RAWフォルダを確認できません: ' + r.error; return; }
+      renderRawPlan(r.plan);
+    }
+    async function openRawModal() {
+      if (!state.currentDir) { toast('先に写真のフォルダを開いてください'); return; }
+      rawState.dir = null;
+      try { rawState.dir = await window.nativeApp.getRawFolder(state.currentDir); } catch (e) { rawState.dir = null; }
+      document.getElementById('rawFolderPath').textContent = rawState.dir || '未選択';
+      document.getElementById('rawModal').classList.remove('hidden');
+      refreshRawPlan();
+    }
+    function setupRawSync() {
+      const btn = document.getElementById('rawSyncBtn');
+      btn.classList.remove('hidden'); btn.classList.add('flex');
+      btn.addEventListener('click', openRawModal);
+      const close = () => document.getElementById('rawModal').classList.add('hidden');
+      document.getElementById('rawCloseBtn').addEventListener('click', close);
+      document.getElementById('rawCancelBtn').addEventListener('click', close);
+      document.getElementById('rawWriteZero').addEventListener('change', refreshRawPlan);
+      document.getElementById('rawCreateNew').addEventListener('change', refreshRawPlan);
+      document.getElementById('rawChooseBtn').addEventListener('click', async () => {
+        const d = await window.nativeApp.chooseRawFolder(state.currentDir);
+        if (!d) return;
+        rawState.dir = d;
+        document.getElementById('rawFolderPath').textContent = d;
+        refreshRawPlan();
+      });
+      document.getElementById('rawRunBtn').addEventListener('click', async () => {
+        const runBtn = document.getElementById('rawRunBtn');
+        const newCount = rawState.plan ? rawState.plan.matches.filter((m) => !m.hasXmp).length : 0;
+        if (newCount > 0 && !rawConfirm) {
+          // 新しく.xmpを作るときは、もう一度押して確認する
+          rawConfirm = true;
+          runBtn.textContent = `新規${newCount}枚を作成して書き出す（もう一度押すと実行）`;
+          return;
+        }
+        runBtn.disabled = true;
+        const r = await window.nativeApp.rawApply({ rawDir: rawState.dir, items: rawItems(), writeZero: document.getElementById('rawWriteZero').checked, createNew: document.getElementById('rawCreateNew').checked });
+        const sum = document.getElementById('rawSummary');
+        if (r.error) { sum.textContent = '書き出せませんでした: ' + r.error; return; }
+        const res = r.result;
+        let t = `書き出し完了: ${res.written}枚（新規 ${res.created} / 更新 ${res.updated}）`;
+        if (res.failed.length) t += `\n失敗 ${res.failed.length}枚:\n  ` + res.failed.slice(0, 10).map((f) => f.name + ' (' + f.reason + ')').join('\n  ');
+        sum.textContent = t;
+        toast(`RAWへ星評価を書き出しました（${res.written}枚）`, 3000);
+      });
+    }
+
+    // 表示補正は、開いたフォルダごとに記憶する（localStorage の pci.adjustByDir）
+    function readAdjustMap() {
+      try { const m = JSON.parse(lsGet('pci.adjustByDir') || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; }
+    }
+
+    function saveAdjustForDir() {
+      const dir = state.currentDir;
+      if (!dir) return;
+      const map = readAdjustMap();
+      if (Adjust.isIdentity(adjUi.values) && adjUi.enabled) delete map[dir];   // 初期状態は記憶しない
+      else map[dir] = { values: Object.assign({}, adjUi.values), enabled: adjUi.enabled };
+      lsSet('pci.adjustByDir', JSON.stringify(map));
+    }
+
+    // フォルダを開いたとき、そのフォルダの補正に切り替える（記憶がなければ初期状態）
+    function loadAdjustForDir(dir) {
+      const saved = dir ? readAdjustMap()[dir] : null;
+      adjUi.values = Object.assign({}, Adjust.DEFAULTS);
+      adjUi.enabled = true;
+      if (saved && typeof saved === 'object') {
+        ADJ_DEFS.forEach((d) => {
+          const v = Math.round(Number(saved.values && saved.values[d[0]]));
+          if (Number.isFinite(v)) adjUi.values[d[0]] = Math.max(d[2], Math.min(d[3], v));
+        });
+        adjUi.enabled = saved.enabled !== false;
+      }
+      ADJ_DEFS.forEach((d) => { const el = document.getElementById('adj-' + d[0]); if (el) el.value = adjUi.values[d[0]]; });
+      Display.setAdjust(adjUi.values, adjUi.enabled);
+      updateAdjustUi();
     }
 
     function updateAdjustUi() {
@@ -2516,6 +2748,7 @@
         });
       }
 
+      setupRawSync();
       const refreshBtn = document.getElementById('refreshTreeBtn');
       refreshBtn.classList.remove('hidden');
       refreshBtn.classList.add('flex');
@@ -2595,6 +2828,7 @@
 
       state.nativeMode = mode;
       state.currentDir = dir;
+      if (dir) loadAdjustForDir(dir);
       state.allFiles = records;
       state.pickedFiles.clear();
       state.metadataMap.clear();
