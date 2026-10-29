@@ -123,6 +123,7 @@
     .grid-card .sel-check { display: none; position: absolute; left: 8px; bottom: 8px; width: 22px; height: 22px; border-radius: 50%; background: #0284c7; color: #fff; font-size: 13px; font-weight: 800; align-items: center; justify-content: center; border: 2px solid #fff; z-index: 11; }
     .grid-card.sel .sel-check { display: flex; }
     #viewerSection, #containerA, #containerB { background-color: var(--viewer-bg, #0a0a0a) !important; }
+    body.zoom-grab, body.zoom-grab * { cursor: grabbing !important; }
     .canvas-container {
       cursor: crosshair;
       user-select: none;
@@ -1016,7 +1017,13 @@
       }, ZOOM_HOLD_MS);
     }
 
-    // 100%等倍表示を始める
+    // 100%等倍表示を始める。クリックした所の写真の点が、そのままカーソルの下に来るようにする
+    let zoomDrag = null;   // つかんで動かしている間: { x, y, canvas, panel }
+    function clampZoomPoint(g, zx, zy) {
+      // 写真が画面より大きい間は、写真の端が画面の端より内側に入らないようにする（小さければ中央）
+      const lim = (z, iw, cw) => (iw <= cw ? 0.5 : Math.max(cw / 2 / iw, Math.min(1 - cw / 2 / iw, z)));
+      return { x: lim(zx, g.iw, g.cw), y: lim(zy, g.ih, g.ch) };
+    }
     function startZoom(e, canvas, panel) {
       if (state.currentFiles.length === 0) return;
       setActivePanel(panel);
@@ -1024,32 +1031,44 @@
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
+      const g = Display.geom(panel);
+      if (g && rect.width > 0 && rect.height > 0) {
+        const cx = (clientX - rect.left) * g.cw / rect.width;
+        const cy = (clientY - rect.top) * g.ch / rect.height;
+        const ix = Math.max(0, Math.min(g.iw, (cx - g.fit.x) / g.fit.w * g.iw));
+        const iy = Math.max(0, Math.min(g.ih, (cy - g.fit.y) / g.fit.h * g.ih));
+        state.zoomPoint = clampZoomPoint(g, (g.cw / 2 - cx + ix) / g.iw, (g.ch / 2 - cy + iy) / g.ih);
+      } else {
+        state.zoomPoint = { x: 0.5, y: 0.5 };
+      }
+      zoomDrag = { x: clientX, y: clientY, canvas, panel };
+      document.body.classList.add('zoom-grab');
       state.isZoomed = true;
-      state.zoomPoint = {
-        x: (clientX - rect.left) / rect.width,
-        y: (clientY - rect.top) / rect.height
-      };
       zoomStatus.textContent = "両画面 100% 等倍表示中";
       zoomStatus.classList.replace('text-amber-300', 'text-emerald-400');
       render();
     }
 
-    function updateZoomPoint(e, canvas) {
-      if (!state.isZoomed) return;
-      const rect = canvas.getBoundingClientRect();
+    // つかんで動かす: カーソルが動いた分だけ、写真が同じ向きに動く
+    function updateZoomPoint(e) {
+      if (!state.isZoomed || !zoomDrag) return;
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-      state.zoomPoint = {
-        x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-        y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-      };
+      const g = Display.geom(zoomDrag.panel);
+      const rect = zoomDrag.canvas.getBoundingClientRect();
+      if (!g || rect.width <= 0 || rect.height <= 0) return;
+      const dx = (clientX - zoomDrag.x) * g.cw / rect.width;
+      const dy = (clientY - zoomDrag.y) * g.ch / rect.height;
+      zoomDrag.x = clientX; zoomDrag.y = clientY;
+      if (dx === 0 && dy === 0) return;
+      state.zoomPoint = clampZoomPoint(g, state.zoomPoint.x - dx / g.iw, state.zoomPoint.y - dy / g.ih);
       render();
     }
 
     function stopZoom() {
       cancelZoomHold();
+      zoomDrag = null;
+      document.body.classList.remove('zoom-grab');
       if (!state.isZoomed) return;
       state.isZoomed = false;
       zoomStatus.textContent = "クリック長押しで100%拡大";
@@ -1077,7 +1096,6 @@
       canvas.addEventListener('mousemove', (e) => {
         if (e.buttons !== 1) return;
         if (zoomHoldTimer) zoomHoldPos = { clientX: e.clientX, clientY: e.clientY };
-        updateZoomPoint(e, canvas);
       });
       canvas.addEventListener('contextmenu', (e) => {
         cancelZoomHold();
@@ -1088,8 +1106,10 @@
       });
       canvas.addEventListener('wheel', onViewerWheel, { passive: false });
       canvas.addEventListener('touchstart', (e) => { e.preventDefault(); pressCanvas(e, canvas, panel); }, { passive: false });
-      canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateZoomPoint(e, canvas); }, { passive: false });
+      canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updateZoomPoint(e); }, { passive: false });
     }
+
+    window.addEventListener('mousemove', (e) => { if (zoomDrag && e.buttons === 1) updateZoomPoint(e); });
 
     function setupEventListeners() {
       // ブラウザ版: <input> で選ばれた File を使う

@@ -699,6 +699,14 @@ const Display = (() => {
     return e ? e.hist : null;
   }
 
+  // 100%表示の位置合わせ用: 写真の大きさと、キャンバスの画素数・写真が収まる枠
+  function geom(key) {
+    const p = panels[key];
+    const e = p && p.file && p.canvas ? entries.get(p.file) : null;
+    if (!e) return null;
+    return { iw: e.w, ih: e.h, cw: p.canvas.width, ch: p.canvas.height, fit: fitRect(e.w, e.h, p.canvas.width, p.canvas.height) };
+  }
+
   // EXIF読み取り用のデータ（ネイティブ版は先頭だけのBlob、ブラウザ版はFile）
   async function getExifSource(file) {
     const e = await loadEntry(file);
@@ -707,7 +715,7 @@ const Display = (() => {
 
   return {
     attach, show, prefetch, paintAll, onResize, rebuildAll,
-    setProfile, setWhiteMatch, setDither, setBackground, getProfileParsed, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource,
+    setProfile, setWhiteMatch, setDither, setBackground, getProfileParsed, setTransitionStyle, setTransitionSpeed, setSharpness, setAdjust, getAdjust, colorSpaceChanged, reset, getHist, getExifSource, geom,
     hasProfile: () => !!profile,
     profileName: () => (profile ? profile.name : ''),
     _debug: { entries, surfaces, panels, buildSurface, stepDown, dims: surfaceDims },
