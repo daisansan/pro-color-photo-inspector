@@ -10,6 +10,7 @@ const fsb = require('./lib/fsbrowse');
 const selections = require('./lib/selections');
 const { loadSettings, saveSettings } = require('./lib/settings');
 const { createThumbService } = require('./lib/thumbs');
+const { createConverter, isConvertible } = require('./lib/convert');
 
 // サムネイル用の独自プロトコル（<img src="pci-thumb://..."> で縮小画像を表示するため）。
 // app.ready より前に登録する必要がある。
@@ -63,6 +64,7 @@ if (!app.requestSingleInstanceLock()) {
     // メニューバーは使わない（Altキーなどでメニューが出て、キー操作の邪魔にならないように）
     Menu.setApplicationMenu(null);
     setupThumbnailProtocol();
+    setTimeout(() => { converter.prune().catch(() => {}); }, 15000);   // PSD/RAWの変換キャッシュが2GBを超えたら、古いものから消す
     createWindow();
 
     app.on('activate', () => {
@@ -87,7 +89,10 @@ function fitSize(w, h, px) {
 
 // 画像を自分で読み込んで縮小する（縦横比と写真の向きを必ず正しく扱う）
 function thumbFromDecode(filePath, px, info) {
-  const img = nativeImage.createFromPath(filePath);
+  return thumbFromImage(nativeImage.createFromPath(filePath), px, info);
+}
+
+function thumbFromImage(img, px, info) {
   if (img.isEmpty()) return null;
   const s = img.getSize();
   const o = info ? info.orientation : 1;
@@ -99,7 +104,23 @@ function thumbFromDecode(filePath, px, info) {
   return nativeImage.createFromBitmap(r.data, { width: r.width, height: r.height }).toJPEG(82);
 }
 
+// PSD / RAW は、表示用のJPEG（PSDは全レイヤーを重ねた絵、RAWは埋め込みプレビュー）に変えてから縮小する
+const converter = createConverter({
+  cacheDir: path.join(userDataDir, 'converted'),
+  encodeJpeg: (rgba, w, h) => {
+    const bgra = Buffer.from(rgba);   // nativeImage は BGRA の並び
+    for (let i = 0; i < bgra.length; i += 4) { const r = bgra[i]; bgra[i] = bgra[i + 2]; bgra[i + 2] = r; }
+    return nativeImage.createFromBitmap(bgra, { width: w, height: h }).toJPEG(95);
+  },
+});
+
 async function makeThumb(filePath, px) {
+  if (isConvertible(filePath)) {
+    try {
+      const jpg = await converter.getViewableJpeg(filePath);
+      return thumbFromImage(nativeImage.createFromBuffer(jpg), px, imginfo.parseImageInfo(jpg));
+    } catch (e) { return null; }
+  }
   const info = await imginfo.readImageInfo(filePath);
 
   // 1) OSのサムネイル機能（Windows/macOS）。速いが、縦横比がおかしい絵が返ることがあるので、
@@ -514,6 +535,7 @@ handle('images:read', async (p) => {
   if (typeof p !== 'string' || !path.isAbsolute(p) || !fsb.isViewableImage(p)) throw new Error('画像ファイルではありません');
   const st = await fs.promises.stat(p);
   if (!st.isFile() || st.size > MAX_IMAGE_BYTES) throw new Error('読み込めないファイルです');
+  if (isConvertible(p)) return converter.getViewableJpeg(p);   // PSD / RAW は表示用JPEGにして返す
   return fs.promises.readFile(p);
 });
 
